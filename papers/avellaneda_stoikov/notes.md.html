@@ -1,0 +1,71 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>papers/avellaneda_stoikov/notes.md</title><style>
+:root{--bg:#f9f9f7;--fg:#0b0b0b;--muted:#52514e;--faint:#898781;--line:#e1e0d9;--card:#fcfcfb;
+--bad:#d03b3b;--good:#1b7f4b;--accent:#1f5fb0;--plot-bg:transparent}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececea;--muted:#a6a59f;--faint:#8c8b85;
+--line:#33333a;--card:#1d1d21;--bad:#ff7b6b;--good:#5cc98d;--accent:#7fb2ff;--plot-bg:#f9f9f7}}
+html{background:var(--bg)}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);max-width:1100px;margin:auto}
+h1{font-size:20px;margin:8px 0}h2{font-size:15px;margin:24px 0 8px;color:var(--muted)}
+table{border-collapse:collapse;font-size:12px;margin-bottom:12px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600}td:first-child,th:first-child{text-align:left}
+.banner{background:var(--bad);color:#fff;padding:10px 14px;font-weight:600;border-radius:4px;margin-bottom:12px}
+.note{color:var(--muted);font-size:12px}
+img{max-width:100%;display:block;margin:8px 0;background:var(--plot-bg);border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px}
+.kpi{font-size:22px;font-weight:600}.kpi small{font-size:11px;color:var(--faint);display:block;font-weight:400}
+</style><style>pre.doc{white-space:pre-wrap;word-wrap:break-word;font:12px/1.55 ui-monospace,Consolas,monospace}</style></head><body><h1>papers/avellaneda_stoikov/notes.md</h1><pre class=doc># Notes — Avellaneda &amp; Stoikov (2008)
+
+## Deviations from the paper and why
+
+| Paper | Here | Why |
+|---|---|---|
+| Fills are Poisson with intensity `A exp(-k delta)` | Fills come from replayed order flow through `Naive` / `ProbQueue` | The point of the platform: the queue models bracket the fill answer; `A` is unused |
+| Dimensionless price, `T = 1`, `sigma = 2`, `gamma = 0.1`, `k = 1.5` | Prices in ticks, time in seconds, inventory in clips of `order_size`; `k` per tick, `sigma` in ticks/sqrt(s) | Ticks are the natural unit of a 0.01-tick book. Only `gamma * sigma^2 * (T - t)` (ticks of skew per clip) transfers, so `gamma` is chosen per dataset: `2e-4` on SYN (sigma ~2.6), `5e-10` on BTC (sigma ~850). `k = 1.5`/tick gives a spread floor `(2/gamma) ln(1+gamma/k) ~ 1.33` ticks, roughly the market spread |
+| Continuous prices | Quotes rounded to the nearest tick, then capped so they never cross: `touch_mode = join` (&lt;= best bid / &gt;= best ask), `improve` (may sit inside the spread), `behind` (best +- 1 tick) | Exchange constraint; `join` is the default so the AS quote can reach the touch when the model spread is narrow |
+| Unbounded inventory | `max_inventory` clips; a side is not quoted if `position + open exposure on that side + size` would breach it | Risk control for the sim; the paper&#x27;s exponential utility makes large `q` rare but not impossible |
+| Known constant `sigma` | Rolling realised variance of the mid sampled every `sigma_sample_ms` over `sigma_window_s`, floored at `sigma_floor`, `sigma_init` until warm | No true sigma on real data; on SYN the estimate settles at ~2.6 ticks/sqrt(s) within a few seconds |
+| Quotes updated every `dt = 0.005` | Requote timer every `requote_ms` (100 ms); optional requote on every touch change | Binance diff batches arrive as runs of deltas with equal `ts_event`; requoting per delta would place orders on half-applied batches. On SYN events are ~10 ms apart so quotes are stale for up to 10 events |
+| Orders always of size 1 | `order_size` in units, rounded to the lot | Same idea |
+| No distance cap | `max_distance_ticks` (20 SYN, 50 BTC): a quote farther than this from the touch is not posted | Avoids parking orders 100s of ticks away when inventory skew is large; they would never fill except on a crash and inflate order counts |
+
+## Implementation notes
+
+- `QuoterBase` owns the order management: one live order per side, replace only when the
+  rounded price changes, cancel the old order before posting the new one, and track
+  cancel-in-flight ids so a cancel is never sent twice. `AvellanedaStoikov` and
+  `SymmetricQuoter` only differ in `quotes()`.
+- `submit`/`cancel` are asynchronous with entry latency. With latency an order can arrive
+  after the book moved through its price; the exchange then fills it as a **taker**. That is
+  the mechanism behind the latency degradation and is visible in `fills.maker_share`.
+- Metrics logged at each requote: `inventory` (clips), `as_sigma`, `as_tau_s`,
+  `as_r_offset_ticks` (`r - mid`), `as_spread_ticks`; `sym_spread_ticks` for the baseline.
+- The reservation offset is `-q * gamma * sigma^2 * tau` so the test asserts
+  `sign(r - mid) = -sign(q)` whenever `q != 0` and `tau &gt; 0`.
+
+## Pitfalls hit
+
+- Earlier in the wave `hft lint` (default paths) flagged `hft/features/book_series.py` for its
+  sanctioned `hft.sim.replayer` import; that is fixed upstream and `hft lint` is clean.
+- Matching semantics changed mid-wave (a resting order is maker-filled on a cross only when
+  the opposite best *moves* through it; a crossing limit order that exhausts visible depth
+  fills the remainder as taker `partial_visibility`; ProbQueue fills are whole lots). All
+  numbers in `results.md` were produced after those changes and after the Binance
+  reconversion.
+- `sigma_floor = 0` lets the spread collapse to the ln-term with no skew when the mid has not
+  moved inside the window (first seconds of a run); use a floor.
+- A finite horizon clamps `tau` to 0 after `horizon_s`; then AS degenerates to a symmetric
+  quoter at `(2/gamma) ln(1+gamma/k)` with no inventory skew. `horizon_s` must cover the
+  session (1400 s for SYN, 4700 s for BTC) or `rolling_horizon: true` must be used.
+- `binance_btcusdt_20260918` has 4 data holes (705 s total) marked by an empty
+  `BookSnapshot`, after which `book.is_valid` is False until the resync snapshot. `QuoterBase`
+  cancels every resting order as soon as `on_book` sees an invalid book and never quotes on
+  one; the sigma sampler skips invalid books, so the first sample after a resync starts a new
+  (mid, ts) pair and the jump across the hole enters the realised variance once. Holes appear
+  as flat segments in the inventory / PnL curves.
+
+## Conclusions
+
+See `results.md`; summary of what held and what did not is at the bottom of that file.
+</pre></body></html>

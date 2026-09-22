@@ -1,0 +1,120 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>papers/avellaneda_stoikov/paper.md</title><style>
+:root{--bg:#f9f9f7;--fg:#0b0b0b;--muted:#52514e;--faint:#898781;--line:#e1e0d9;--card:#fcfcfb;
+--bad:#d03b3b;--good:#1b7f4b;--accent:#1f5fb0;--plot-bg:transparent}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececea;--muted:#a6a59f;--faint:#8c8b85;
+--line:#33333a;--card:#1d1d21;--bad:#ff7b6b;--good:#5cc98d;--accent:#7fb2ff;--plot-bg:#f9f9f7}}
+html{background:var(--bg)}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);max-width:1100px;margin:auto}
+h1{font-size:20px;margin:8px 0}h2{font-size:15px;margin:24px 0 8px;color:var(--muted)}
+table{border-collapse:collapse;font-size:12px;margin-bottom:12px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600}td:first-child,th:first-child{text-align:left}
+.banner{background:var(--bad);color:#fff;padding:10px 14px;font-weight:600;border-radius:4px;margin-bottom:12px}
+.note{color:var(--muted);font-size:12px}
+img{max-width:100%;display:block;margin:8px 0;background:var(--plot-bg);border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px}
+.kpi{font-size:22px;font-weight:600}.kpi small{font-size:11px;color:var(--faint);display:block;font-weight:400}
+</style><style>pre.doc{white-space:pre-wrap;word-wrap:break-word;font:12px/1.55 ui-monospace,Consolas,monospace}</style></head><body><h1>papers/avellaneda_stoikov/paper.md</h1><pre class=doc># Avellaneda &amp; Stoikov (2008) — High-frequency trading in a limit order book
+
+Quantitative Finance 8(3), 217–224.
+
+## 1. 问题与设定
+
+A single risk-averse dealer quotes a bid and an ask around a mid price that follows an
+arithmetic Brownian motion `dS = sigma dW` (no drift). Market orders arrive as Poisson
+processes whose intensity decays exponentially with the distance of the quote from the
+mid: `lambda(delta) = A * exp(-k * delta)`. The dealer maximises expected exponential
+utility of terminal wealth `-exp(-gamma * (X_T + q_T * S_T))` at a fixed horizon `T`,
+with `X` the cash and `q` the (unbounded) inventory. The paper is a simulation paper: there
+is no empirical dataset, prices are dimensionless (`s0 = 100`, `T = 1`).
+
+Frequency: continuous time, discretised at `dt = 0.005` per step (200 steps per session).
+
+## 2. 模型 / 策略公式
+
+Indifference (reservation) price for inventory `q` at time `t`:
+
+```
+r(s, q, t) = s - q * gamma * sigma^2 * (T - t)
+```
+
+Optimal total spread (bid–ask distance around `r`, first-order approximation):
+
+```
+delta_a + delta_b = gamma * sigma^2 * (T - t) + (2 / gamma) * ln(1 + gamma / k)
+```
+
+Quotes: `p_bid = r - delta/2`, `p_ask = r + delta/2`. As `t -&gt; T` the inventory term
+vanishes and the spread collapses to `(2/gamma) ln(1 + gamma/k) ~= 2/k`.
+
+## 3. 原文参数
+
+`s0 = 100`, `T = 1`, `sigma = 2`, `dt = 0.005`, `q0 = 0`, `gamma = 0.1` (also 0.01, 0.5),
+`k = 1.5`, `A = 140`, 1000 Monte Carlo paths; orders of size 1; the mid moves by
+`+-sigma sqrt(dt)` each step; fills are Poisson draws with intensity `lambda(delta) dt`.
+
+## 4. 原文声称的结果
+
+Table 1 of the paper (gamma = 0.1, from memory of the published table — verify against the
+PDF before quoting): the inventory strategy earns a mean profit of ~65.0 with std ~6.6 and
+final-inventory std ~2.9, against ~68.4 / ~12.7 / ~8.7 for the symmetric strategy that quotes
+the same spread centred on the mid. The main claim is qualitative: centring quotes on the
+reservation price instead of the mid gives slightly lower mean PnL but a much lower PnL
+variance and much tighter inventory distribution, for every gamma tested. The spread narrows
+as `t -&gt; T`, and larger gamma gives a wider spread and smaller inventory.
+
+## 5. 复现所需的平台能力
+
+- Layer: **Strategy** (`hft/strategy/base.py::BaseStrategy`), no Model / Signal layer.
+- Fidelity: L2 + queue model. The paper&#x27;s fill model is a Poisson intensity in distance;
+  here fills come from the replayed order flow through `Naive` and `ProbQueue`. The two
+  queue models bracket the answer.
+- Event loop with timers (`requote_ms`), asynchronous submit/cancel with entry/response
+  latency, inventory tracking (`ctx.position`), maker/taker attribution, markout by time
+  and by mid change, and `hft compare` for the comparison matrix.
+- Online volatility estimate from the replayed mid (rolling realised variance).
+- Units on this platform: prices in ticks, time in seconds, inventory in clips of
+  `order_size`. `k` is therefore per tick and `sigma` in ticks / sqrt(s); the paper&#x27;s
+  dimensionless `gamma` does not transfer, only the product `gamma * sigma^2 * (T - t)`
+  (ticks of skew per clip) is meaningful.
+
+## 6. 复现前的预期
+
+Written before any run.
+
+1. **The core claim (lower inventory variance at similar PnL) should hold** on
+   `synthetic_dev`: the reservation-price skew is a pure inventory-mean-reversion device and
+   does not depend on the fill model. Expect `risk.qty_abs_mean` and `qty_max` clearly
+   smaller for AS than for `SymmetricQuoter`, with PnL of the same order.
+2. **Absolute PnL will not match the paper and will be near zero or negative.** The paper&#x27;s
+   fills are exogenous Poisson draws that earn the full quoted distance. On a replayed
+   random-walk book, a resting quote at or behind the touch is filled mostly when the touch
+   is swept through it, i.e. exactly when the price moves against us. Expect maker markout
+   at 1–5 s to be negative (adverse selection) and the spread earned to be ~1 tick, so total
+   PnL for both strategies ~ 0 minus adverse selection. Fees are zero on `synthetic_dev`.
+3. **ProbQueue fills fewer orders than Naive.** Naive fills our whole order on any trade at
+   our level; ProbQueue requires the queue ahead to be consumed first. Expect fewer fills,
+   lower turnover, and the Naive PnL to be the optimistic end of the interval. Not certain:
+   Naive also gets more adverse fills, so the ordering of PnL could flip if adverse
+   selection dominates spread capture.
+4. **PnL degrades with latency.** With entry latency, quotes are placed on a stale book:
+   orders that cross on arrival become taker fills and stale quotes get picked off. Expect
+   monotone degradation 0 -&gt; 1 ms -&gt; 10 ms and a non-zero taker share at 10 ms. On
+   `synthetic_dev` events are ~10 ms apart, so 1 ms should barely matter and 10 ms should.
+5. **The finite-horizon spread will mostly be behind the touch.** With `k = 1.5` per tick
+   the spread term is ~1.3 ticks; adding the inventory term makes the model spread wider
+   than the 1-tick market spread for most of the session, so AS posts 1+ ticks behind the
+   touch and is filled less often than the baseline that joins the touch. As `t -&gt; T` it
+   tightens. Expect AS fill count &lt; SymmetricQuoter fill count.
+6. **On the Binance sample nothing is a conclusion.** (Written against the 7-minute smoke
+   recording; the final runs use `binance_btcusdt_20260918`, 78 min with 4 holes, same
+   instrument and fees.) Minutes of data, and the
+   instrument carries 10 bps maker and taker fees, while one tick on BTC at ~80k is
+   ~0.001 bps. PnL after fees will be negative and equal to roughly minus fees for both
+   strategies; only PnL before fees, fill counts and markouts are worth reading. Expect
+   ProbQueue fills to be far fewer than Naive because BTC top-of-book queues are large
+   relative to a 0.001 BTC order.
+7. Not testable here: the paper&#x27;s variance-of-PnL claim across 1000 paths (we have one
+   path per dataset); `A` (arrival intensity) plays no role since fills come from data.
+</pre></body></html>

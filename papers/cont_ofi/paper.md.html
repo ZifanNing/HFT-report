@@ -1,0 +1,124 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>papers/cont_ofi/paper.md</title><style>
+:root{--bg:#f9f9f7;--fg:#0b0b0b;--muted:#52514e;--faint:#898781;--line:#e1e0d9;--card:#fcfcfb;
+--bad:#d03b3b;--good:#1b7f4b;--accent:#1f5fb0;--plot-bg:transparent}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececea;--muted:#a6a59f;--faint:#8c8b85;
+--line:#33333a;--card:#1d1d21;--bad:#ff7b6b;--good:#5cc98d;--accent:#7fb2ff;--plot-bg:#f9f9f7}}
+html{background:var(--bg)}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);max-width:1100px;margin:auto}
+h1{font-size:20px;margin:8px 0}h2{font-size:15px;margin:24px 0 8px;color:var(--muted)}
+table{border-collapse:collapse;font-size:12px;margin-bottom:12px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600}td:first-child,th:first-child{text-align:left}
+.banner{background:var(--bad);color:#fff;padding:10px 14px;font-weight:600;border-radius:4px;margin-bottom:12px}
+.note{color:var(--muted);font-size:12px}
+img{max-width:100%;display:block;margin:8px 0;background:var(--plot-bg);border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px}
+.kpi{font-size:22px;font-weight:600}.kpi small{font-size:11px;color:var(--faint);display:block;font-weight:400}
+</style><style>pre.doc{white-space:pre-wrap;word-wrap:break-word;font:12px/1.55 ui-monospace,Consolas,monospace}</style></head><body><h1>papers/cont_ofi/paper.md</h1><pre class=doc># Cont, Kukanov &amp; Stoikov (2014) — The price impact of order book events
+
+Journal of Financial Econometrics 12(1), 47–88.
+
+## 1. 问题与设定
+
+Does a single linear variable built from top-of-book order flow explain short-horizon
+price changes? The paper defines order flow imbalance (OFI) from best bid/ask price and
+size changes only, and shows that mid-price changes over fixed time intervals are linear in
+OFI with a slope that is inversely proportional to market depth.
+
+Data: 50 US stocks from the S&amp;P 500 sample, April 2010, NASDAQ TotalView-ITCH level-2
+(best bid/ask and sizes), 9:30–16:00. Time intervals of 10 s (primary), also 1 s to
+several minutes for robustness; half-hour sub-periods for the depth regression.
+
+## 2. 模型 / 策略公式
+
+For consecutive best-quote states `n-1 -&gt; n` with bid price/size `(P^B, q^B)` and ask
+`(P^A, q^A)`:
+
+```
+e_n = 1{P^B_n &gt;= P^B_{n-1}} q^B_n - 1{P^B_n &lt;= P^B_{n-1}} q^B_{n-1}
+    - 1{P^A_n &lt;= P^A_{n-1}} q^A_n + 1{P^A_n &gt;= P^A_{n-1}} q^A_{n-1}
+```
+
+`e_n` is the net change in bid-side supply minus ask-side supply at the touch: a bid size
+increase, a bid price increase, an ask size decrease or an ask price increase all count as
+positive flow. OFI over an interval `(t_{k-1}, t_k]` is `OFI_k = sum e_n` over the events in
+the interval. The contemporaneous regression is
+
+```
+dP_k = alpha + beta * OFI_k + eps_k,      dP_k = (P_mid(t_k) - P_mid(t_{k-1})) / tick
+```
+
+with the structural prediction `beta ~= 1 / (2 D)` where `D` is the average depth beyond
+the touch (a &quot;stylised&quot; book with constant depth per tick). The paper also shows that
+trade imbalance (buy minus sell volume) has weaker explanatory power than OFI and adds
+little once OFI is included.
+
+On this platform OFI is used two ways: (a) the paper&#x27;s contemporaneous fixed-window
+regression, and (b) as a causal trailing-window signal (`OFI` over the last `W` events or
+last `w` seconds) evaluated against forward mid changes, which is the platform&#x27;s standard
+signal test and is *not* what the paper claims.
+
+## 3. 原文参数
+
+Interval `Delta t = 10 s`; half-hour windows for estimating depth `D`; OFI in shares,
+price changes in ticks (cents); OLS per stock per half hour; robustness over 
+`Delta t in {1 s, ..., 10 min}` and across 50 stocks with different tick/price ratios.
+
+## 4. 原文声称的结果
+
+- Contemporaneous `R^2` of `dP ~ OFI` averages ~65% across stocks (10 s windows), with
+  beta significantly positive in essentially every stock and half hour.
+- `R^2` increases with the interval length up to a few minutes and is lowest at the
+  finest resolution (1 s); the linear relation holds across time scales.
+- `beta` is inversely proportional to depth: `log(beta) ~ -lambda log(D)` with
+  `lambda ~ 1` and `R^2 ~ 70-90%` in the cross-section.
+- Trade imbalance explains less (R^2 ~ 30-40%) and adds nothing incremental.
+- Price impact is linear in OFI (no concavity as often reported for trade volume).
+
+## 5. 复现所需的平台能力
+
+- Layer: **Signal** (`hft/strategy/base.py::Signal`, `compute_batch(frame)`).
+- `hft.features.book_series.top_of_book` to turn canonical frames into a per-update
+  top-of-book series (Binance diff batches collapse into one row per `ts_event`).
+- `hft.eval.labels.make_labels` for forward mid changes at event horizons {1,5,10,50}
+  and time horizons {1 s, 5 s, 30 s}; `hft.eval.signal_eval.evaluate_signal` for IC, R^2,
+  beta, hit rate, deciles; `build_signal_report` for JSON + HTML.
+- Fidelity: L2 top-of-book only; no simulator, no queue model, no latency.
+- Datasets: `synthetic_dev` (random-walk touch, 200k events, 23 min) and
+  `binance_btcusdt_20260918` (78 min of real BTCUSDT L2 diff batches, 4 data holes; the
+  predictions below were written against the earlier 7-minute smoke recording).
+
+## 6. 复现前的预期
+
+Written before any run.
+
+1. **Contemporaneous regression on BTC: beta &gt; 0 and material R^2, but below the paper&#x27;s
+   65%.** BTC top-of-book queues are large and fragmented and Binance publishes 100 ms diff
+   batches, so `e_n` is coarser than ITCH events. Expect R^2 at 1 s of 10–30%, rising with
+   the window (5 s, 10 s, 30 s) as in the paper, but with only 7 minutes the 30 s window has
+   ~14 points and its R^2 is noise. Only 1–5 s windows are readable.
+2. **Contemporaneous regression on `synthetic_dev` should give a clean positive beta
+   because of how the generator works, not because of economics.** A buy sweep removes the
+   best ask level and the ask price rises, which contributes `+q^A_{n-1}` to `e_n`: positive
+   OFI coincides with an upward mid move by construction. Size refills are random and
+   uncorrelated with the mid, so they add noise: expect R^2 well below the paper (guess
+   20–50%) and a beta of order `1 / (2 * mean level size)` in ticks per unit size.
+3. **Trailing-window OFI as a forward predictor should be weak.** On `synthetic_dev` the
+   touch is a pure random walk with no state dependence, so IC of any signal at any horizon
+   should be ~0 (|IC| &lt; 0.02). On BTC, expect a small positive IC (0.02–0.08) at 1–10
+   events and 1 s, decaying with horizon; short-horizon predictability of the microprice
+   kind is well documented but the paper does not claim it.
+4. **Microprice offset and top imbalance will beat OFI as forward predictors** at the
+   shortest horizons on BTC (they encode the current queue state; OFI encodes its change),
+   and OFI should correlate with the change in imbalance rather than its level. Expect
+   |IC| ordering at 1 event: imbalance ~ microprice &gt; OFI &gt; last-mid-change.
+5. **Last-mid-change (naive momentum baseline)** should show slightly negative IC at 1
+   event on both datasets (bid-ask bounce / mean reversion of the mid at the tick level),
+   near zero on synthetic.
+6. **Beta ~ 1/(2D)** cannot be checked in the cross-section (one instrument per dataset);
+   we only check its sign and order of magnitude against the average top-of-book depth.
+7. Event-horizon labels on BTC are in units of *top-of-book batches* (100 ms), not
+   individual events, so &quot;1 event&quot; on BTC is ~100 ms and not comparable to the synthetic
+   &quot;1 event&quot; (~10 ms).
+</pre></body></html>

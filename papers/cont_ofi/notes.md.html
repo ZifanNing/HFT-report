@@ -1,0 +1,64 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>papers/cont_ofi/notes.md</title><style>
+:root{--bg:#f9f9f7;--fg:#0b0b0b;--muted:#52514e;--faint:#898781;--line:#e1e0d9;--card:#fcfcfb;
+--bad:#d03b3b;--good:#1b7f4b;--accent:#1f5fb0;--plot-bg:transparent}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececea;--muted:#a6a59f;--faint:#8c8b85;
+--line:#33333a;--card:#1d1d21;--bad:#ff7b6b;--good:#5cc98d;--accent:#7fb2ff;--plot-bg:#f9f9f7}}
+html{background:var(--bg)}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);max-width:1100px;margin:auto}
+h1{font-size:20px;margin:8px 0}h2{font-size:15px;margin:24px 0 8px;color:var(--muted)}
+table{border-collapse:collapse;font-size:12px;margin-bottom:12px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600}td:first-child,th:first-child{text-align:left}
+.banner{background:var(--bad);color:#fff;padding:10px 14px;font-weight:600;border-radius:4px;margin-bottom:12px}
+.note{color:var(--muted);font-size:12px}
+img{max-width:100%;display:block;margin:8px 0;background:var(--plot-bg);border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px}
+.kpi{font-size:22px;font-weight:600}.kpi small{font-size:11px;color:var(--faint);display:block;font-weight:400}
+</style><style>pre.doc{white-space:pre-wrap;word-wrap:break-word;font:12px/1.55 ui-monospace,Consolas,monospace}</style></head><body><h1>papers/cont_ofi/notes.md</h1><pre class=doc># Notes — Cont, Kukanov &amp; Stoikov (2014)
+
+## Deviations from the paper and why
+
+| Paper | Here | Why |
+|---|---|---|
+| NASDAQ ITCH level-2 events for 50 stocks, one month | One instrument per dataset: `synthetic_dev` (random-walk generator, 23 min) and `binance_btcusdt_20260918` (78 min of Binance spot L2 diff batches, 4 holes) | What is on disk. The cross-sectional depth regression (`beta ~ 1/(2D)` across stocks) cannot be run; only the sign and order of magnitude of `beta * 2D` is checked on each instrument |
+| One `e_n` per best-quote event | One row per top-of-book change after collapsing runs of equal `ts_event` (`top_of_book(on_change_only=True)`) | Binance publishes 100 ms diff batches; intermediate states inside a batch are not observable. `e_n` is computed between consecutive observable states, which is what a subscriber sees |
+| Sizes in shares, price changes in cents | Sizes in asset units (`size / 1e9`), price changes in ticks (`tick_size = 0.01` on both) | Fixed-point platform units |
+| `Delta t = 10 s` windows, half-hour regressions | Fixed windows of 1, 5, 10, 30 s over the whole sample, one OLS per window length | Sample too short to split into half hours; 30 s gives only ~150 (BTC) / 45 (SYN) points |
+| `dP_k` from mid at window boundaries | Last mid inside window `k` minus last mid inside window `k-1`; empty windows are skipped (none occur at &gt;= 1 s) | Vectorised implementation (`bucket_ofi`) |
+| Only the contemporaneous regression | Additionally the platform&#x27;s forward-looking signal test: trailing-window OFI (1/5/10/50 rows, 1 s/5 s) vs forward mid change at {1,5,10,50} rows and {1,5,30} s, with IC / R^2 / hit rate / deciles, against last-mid-change, microprice offset and top imbalance | Required by docs/05. This is **not** a claim of the paper: the paper is about contemporaneous impact, not prediction |
+| Trade imbalance as the competing variable | Not implemented | `top_of_book` only carries the last trade; a trade-volume window is a small follow-up (feature request noted) |
+
+## Implementation notes
+
+- `hft/features/ofi.py`: `ofi_events(frame)` is the exact `e_n`; `OFI(window=W)` and
+  `OFI(window_ns=w)` are trailing sums, causal by construction (tested by perturbing later
+  rows); `bucket_ofi(frame, window_ns, tick_size)` builds the paper&#x27;s regression frame with
+  `ofi`, `dmid_ticks`, `n` and mean half depth per window. `size_scale` defaults to 1e9 so
+  OFI is in asset units; tests pass `size_scale=1`.
+- `hft/features/microprice.py`: `MicropriceOffset(tick_size)` and `TopImbalance()`.
+- `papers/cont_ofi/signal.py`: `LastMidChange` baseline and `signal_set(...)`.
+- `papers/cont_ofi/evaluate.py`: `--config configs/{smoke,base,btc}.yaml` or CLI flags;
+  writes `&lt;out&gt;/&lt;signal&gt;_signal_eval.json`, `&lt;signal&gt;_signal_report.html`, `signals.parquet`,
+  `summary.json` (per-signal IC/R^2/beta/hit rate per horizon, Spearman correlation matrix,
+  regression table).
+- Event horizons on BTC are in top-of-book rows (about one per 100 ms batch), on SYN in
+  top-of-book changes (about one per 30 ms). &quot;1 event&quot; is not the same clock on the two
+  datasets.
+
+## Pitfalls hit
+
+- The synthetic generator&#x27;s `p_trade` events consume a random fraction of the best level and
+  can delete it, so a thin best level is followed by a mid move more often than a thick one.
+  That gives `imbalance` / `micro_offset` real forward IC on a &quot;random walk&quot; book. It is a
+  property of the generator (queue depletion), not a bug, but it means `synthetic_dev` is not a
+  zero-information control for state signals; it is one for flow signals (OFI IC ~ 0).
+- `binance_btcusdt_20260918` has 4 data holes (705 s) marked by an empty snapshot;
+  `top_of_book` skips rows while the book is invalid, so the series simply jumps across the
+  hole. `bucket_ofi` drops any window whose predecessor window is empty, so the jump never
+  enters the contemporaneous regression. The trailing-window signals do see one spurious
+  `e_n` at each resync (one row in 32k), and time-horizon labels straddling a hole are
+  as-of values from before the hole (a ~0 label); both are negligible at this sample size.
+- Label keys from `make_labels` are `mid_t&lt;ns&gt;`; the evaluate script prints them as
+  `mid_t&lt;s&gt;s`, JSON keeps the raw keys.
+</pre></body></html>

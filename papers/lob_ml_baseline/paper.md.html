@@ -1,0 +1,83 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>papers/lob_ml_baseline/paper.md</title><style>
+:root{--bg:#f9f9f7;--fg:#0b0b0b;--muted:#52514e;--faint:#898781;--line:#e1e0d9;--card:#fcfcfb;
+--bad:#d03b3b;--good:#1b7f4b;--accent:#1f5fb0;--plot-bg:transparent}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececea;--muted:#a6a59f;--faint:#8c8b85;
+--line:#33333a;--card:#1d1d21;--bad:#ff7b6b;--good:#5cc98d;--accent:#7fb2ff;--plot-bg:#f9f9f7}}
+html{background:var(--bg)}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);max-width:1100px;margin:auto}
+h1{font-size:20px;margin:8px 0}h2{font-size:15px;margin:24px 0 8px;color:var(--muted)}
+table{border-collapse:collapse;font-size:12px;margin-bottom:12px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600}td:first-child,th:first-child{text-align:left}
+.banner{background:var(--bad);color:#fff;padding:10px 14px;font-weight:600;border-radius:4px;margin-bottom:12px}
+.note{color:var(--muted);font-size:12px}
+img{max-width:100%;display:block;margin:8px 0;background:var(--plot-bg);border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px}
+.kpi{font-size:22px;font-weight:600}.kpi small{font-size:11px;color:var(--faint);display:block;font-weight:400}
+</style><style>pre.doc{white-space:pre-wrap;word-wrap:break-word;font:12px/1.55 ui-monospace,Consolas,monospace}</style></head><body><h1>papers/lob_ml_baseline/paper.md</h1><pre class=doc># LOB ML baseline: top-of-book features to mid-price direction
+
+Not a single paper; a baseline in the spirit of the classical LOB-prediction literature
+(Kercheval &amp; Zhang 2015 &quot;Modelling high-frequency limit order book dynamics with SVMs&quot;;
+Ntakaris et al. 2018 FI-2010 benchmark; Sirignano &amp; Cont 2019 &quot;Universal features of price formation&quot;).
+Purpose: exercise the `Model` / `DatasetBuilder` / time-split path end to end and establish the
+number every later model must beat.
+
+## 1. 问题与设定
+资产 / 频率 / 数据：
+- Assets: `synthetic_dev/SYN` (seeded random-walk LOB, 200k canonical events -&gt; ~43k top-of-book changes),
+  and `binance_btcusdt_20260918/BTCUSDT` (one recorded day of Binance depth@100ms + trades, 2.24M deltas -&gt;
+  ~35.6k top-of-book rows in 5 hole-free segments; §6 was written against the 8-minute smoke subset).
+- Sampling: one row per top-of-book change (`hft.features.book_series.top_of_book`). On Binance a &quot;row&quot;
+  is one 100 ms diff batch, so &quot;1 event&quot; ≈ 100 ms and &quot;50 events&quot; ≈ 5 s.
+- Target: sign of future mid change at horizons {1, 5, 10, 50} rows and {1 s, 5 s}; three classes
+  (down / flat / up, threshold 0 ticks). Continuous target: mid change in ticks at the same horizons.
+
+## 2. 模型 / 策略公式
+Features at row i (all backward-looking, `hft/features/basic.py`):
+spread (ticks), top imbalance (b−a)/(b+a), 5-level depth imbalance, microprice − mid (ticks),
+lagged mid returns over 1/5/10 rows, rolling realized vol of 1-row mid changes (window 50),
+last trade sign, seconds since previous row, plus OFI over 1 and 10 rows (`hft.features.ofi.OFI`, added after
+the §6 predictions were written).
+
+Classifier: multinomial logistic regression on standardized features, `class_weight=&quot;balanced&quot;`, C = 1.
+Regressor: Ridge (α = 1) on standardized features -&gt; continuous mid change; predicted score evaluated
+with `hft.eval.signal_eval` (Spearman IC, IC t-stat over 10 time buckets, hit rate).
+
+## 3. 原文参数
+Kercheval &amp; Zhang: 134 hand-crafted features (levels, time-insensitive &amp; time-sensitive), RBF SVM,
+horizon 5–20 events, threshold on mid move. FI-2010: 144 features, horizons 10–100 events, ridge / SLFN.
+This baseline keeps 10 features and a linear model.
+
+## 4. 原文声称的结果
+Kercheval &amp; Zhang report ~70–80 % up/down accuracy on 5 NASDAQ stocks (day-level fits);
+FI-2010 linear baselines reach F1 ≈ 0.4–0.5 at 10-event horizon, non-linear models ≈ 0.6–0.8.
+Widely noted caveat: much of the reported accuracy comes from the flat class and short-horizon
+mean reversion of the spread, not exploitable directional edge.
+
+## 5. 复现所需的平台能力
+- 保真度：L1 (top of book + 5-level depth) suffices; no simulation needed.
+- 接口层：Signal (batch), Model (fit/predict/save/load), `DatasetBuilder` + `time_split` with embargo;
+  labels from `hft.eval.labels.make_labels`; report via `build_signal_report`.
+
+## 6. 复现前的预期
+Written before running `evaluate.py`. `binance_btcusdt_smoke` below means the ~8-minute conversion that
+carried that name at the time; the dataset now called `binance_btcusdt_smoke` is a 298.6 s view of the
+full day (see results.md). The predictions are left as written.
+
+1. `synthetic_dev`: mid follows a seeded random walk with no order-flow feedback, so every feature is
+   independent of future mid changes. Expect classifier accuracy ≈ majority-class accuracy, up/down hit
+   rate ≈ 0.50 ± noise, |IC| &lt; 0.02 and IC t-stat within ±2 at all horizons. Any material edge here is
+   a lookahead bug, not a result.
+2. `binance_btcusdt_smoke`: real order flow. Expect top imbalance and microprice − mid to carry a small
+   positive edge at 1–5 row horizons (hit rate 0.52–0.58, IC 0.03–0.10), decaying toward zero by 50 rows
+   and 5 s. Lagged returns likely show mild mean reversion at 1 row (bid-ask bounce) and nothing beyond.
+3. Because Binance rows are 100 ms batches with ~900 deltas each, &quot;1 event&quot; is much coarser than in the
+   papers, so the strongest microstructure effects (queue depletion at 1 delta) are partly averaged away;
+   the edge may be weaker than the literature&#x27;s 1-event numbers.
+4. Sample size: ~3.9k Binance rows -&gt; ~1.1k test rows -&gt; ±1.5 pp standard error on hit rate. Anything
+   under ~0.53 is indistinguishable from chance; IC t-stat over 10 buckets will be noisy.
+5. `class_weight=&quot;balanced&quot;` will pull accuracy below the majority baseline when the flat class dominates
+   (short horizons); macro-F1 and up/down hit rate are the meaningful comparisons there.
+6. Literature-level accuracy (70 %+) will not be reproduced: no deep book levels, linear model, tiny sample.
+</pre></body></html>

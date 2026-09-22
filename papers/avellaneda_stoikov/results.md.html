@@ -1,0 +1,360 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>papers/avellaneda_stoikov/results.md</title><style>
+:root{--bg:#f9f9f7;--fg:#0b0b0b;--muted:#52514e;--faint:#898781;--line:#e1e0d9;--card:#fcfcfb;
+--bad:#d03b3b;--good:#1b7f4b;--accent:#1f5fb0;--plot-bg:transparent}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececea;--muted:#a6a59f;--faint:#8c8b85;
+--line:#33333a;--card:#1d1d21;--bad:#ff7b6b;--good:#5cc98d;--accent:#7fb2ff;--plot-bg:#f9f9f7}}
+html{background:var(--bg)}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);max-width:1100px;margin:auto}
+h1{font-size:20px;margin:8px 0}h2{font-size:15px;margin:24px 0 8px;color:var(--muted)}
+table{border-collapse:collapse;font-size:12px;margin-bottom:12px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600}td:first-child,th:first-child{text-align:left}
+.banner{background:var(--bad);color:#fff;padding:10px 14px;font-weight:600;border-radius:4px;margin-bottom:12px}
+.note{color:var(--muted);font-size:12px}
+img{max-width:100%;display:block;margin:8px 0;background:var(--plot-bg);border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px}
+.kpi{font-size:22px;font-weight:600}.kpi small{font-size:11px;color:var(--faint);display:block;font-weight:400}
+</style><style>pre.doc{white-space:pre-wrap;word-wrap:break-word;font:12px/1.55 ui-monospace,Consolas,monospace}</style></head><body><h1>papers/avellaneda_stoikov/results.md</h1><pre class=doc># Results — Avellaneda &amp; Stoikov (2008)
+
+Synthetic runs: `synthetic_dev` (SYN, 200k events, 1374 s, tick 0.01, zero fees), params from
+`configs/base.yaml` (gamma 2e-4, k 1.5, T = session, requote 100 ms, order 1 lot, max
+inventory 10 clips, join touch). Real runs: `binance_btcusdt_20260918` (78 min incl. 705 s of
+holes, 10 bps maker and taker fees, 0.001 BTC clips, max inventory 5 clips, gamma 5e-10,
+`configs/btc.yaml`). Baseline `SymmetricQuoter` with `half_spread_ticks = 1` (joins both sides
+of a 1-tick book). Latency cells set `entry_us = resp_us`. Side-by-side HTML:
+`runs/compare_as_{syn,btc,sens}.html`. The parameter sensitivity was re-run out of sample in
+Wave B and now lives under `sweeps/` — see the sensitivity section. All runs on the final
+matching semantics (cross-fill only
+when the opposite best moves through, crossing remainder as taker, whole-lot ProbQueue fills).
+
+**Caveat on the real data.** 78 minutes of one bursty BTCUSDT session with fees 1000× the
+tick is a pipeline check, not a conclusion. Read &quot;PnL before fees&quot; (= `pnl.total +
+costs.fees`) for the strategy effect; after fees every BTC cell is minus its fee bill.
+
+## Fixed table
+
+PnL in price units (SYN: 1 lot at ~100; BTC: USDT). Markout = maker fills, 1 s, ticks,
+negative = adverse. Inventory in clips.
+
+| 项 | 原文 | 本平台 (Naive) | 本平台 (ProbQueue) | 延迟 1ms (Naive / PQ) | 延迟 10ms (Naive / PQ) |
+|---|---|---|---|---|---|
+| **SYN** AS PnL | 65.0 (mean of 1000 paths, gamma 0.1) | **+10.42** | **−11.63** | +10.33 / −11.88 | +8.71 / −12.59 |
+| SYN Symmetric PnL | 68.4 | −19.22 | −65.92 | −20.46 / −66.45 | −28.69 / −71.29 |
+| SYN AS mean abs inventory | std of final q 2.9 | 0.50 (max 5) | 0.54 (max 9) | 0.50 / 0.55 | 0.55 / 0.59 |
+| SYN Symmetric mean abs inventory | std of final q 8.7 | 5.40 (max 10 = cap) | 5.68 (cap) | 5.49 / 5.69 | 5.54 / 5.83 |
+| SYN AS max drawdown | — | 0.41 | 11.83 | 0.41 / 12.08 | 0.57 / 12.80 |
+| SYN Symmetric max drawdown | — | 22.04 | 66.51 | 23.39 / 66.99 | 30.11 / 71.61 |
+| SYN AS fills / orders | — | 6839 / 16450 | 3685 / 13944 | 6849, 3699 | 6810, 3831 |
+| SYN Symmetric fills / orders | — | 15340 / 19811 | 8708 / 14433 | 15246, 8684 | 14441, 8504 |
+| SYN AS maker share | 1 | 1.000 | 1.000 | 0.995 / 0.993 | 0.970 / 0.966 |
+| SYN AS markout 1 s vs mid / vs fill price | — | −0.015 / +0.165 | −0.036 / −0.269 | −0.011 / +0.171, −0.034 / −0.265 | −0.003 / +0.172, −0.026 / −0.263 |
+| SYN AS mean quoted spread (ticks) | 1.49 (dimensionless) | 2.38 | 2.38 | 2.38 | 2.38 |
+| **BTC** AS PnL before fees (after fees) | — | −43.9 (−1154) | −36.0 (−322) | −31.9 (−1140) / −26.7 (−308) | −31.4 (−1105) / −26.1 (−302) |
+| BTC Symmetric PnL before fees (after fees) | — | −37.5 (−1401) | −35.5 (−331) | −28.4 (−1389) / −26.2 (−315) | −27.6 (−1344) / −25.6 (−308) |
+| BTC AS mean abs inventory | — | 2.02 (max 5 = cap) | 3.03 (max 5) | 2.02 / 3.05 | 2.00 / 3.05 |
+| BTC Symmetric mean abs inventory | — | 3.36 (cap) | 3.09 (cap) | 3.36 / 3.09 | 3.33 / 3.09 |
+| BTC AS fills / orders | — | 13737 / 20254 | 6095 / 7258 | 13712, 5769 | 13298, 5635 |
+| BTC AS maker share | 1 | 1.000 | 1.000 | 0.826 / 0.697 | 0.825 / 0.697 |
+| BTC AS markout 1 s vs mid (ticks) | — | −182 | −680 | −129 / −796 | −131 / −797 |
+| BTC AS mean quoted spread (ticks) | — | 1.79 | 1.79 | 1.79 | 1.79 |
+
+run_ids (`papers_avellaneda_stoikov_strategy_&lt;Strategy&gt;_&lt;dataset&gt;_&lt;suffix&gt;`):
+
+| cell | 0 | 1 ms | 10 ms |
+|---|---|---|---|
+| SYN AS naive | `20260918T200221672405_92d2f6` | `…T200224735563_c1beec` | `…T200227585523_f2c8dc` |
+| SYN AS prob_queue | `…T200230372222_ea7c92` | `…T200232982013_9ae220` | `…T200235595657_a7076f` |
+| SYN Sym naive | `…T200238281082_ea01c8` | `…T200240958350_e5aefd` | `…T200243619136_fb34f7` |
+| SYN Sym prob_queue | `…T200246195644_faddd3` | `…T200248637377_d94777` | `…T200251092004_b56ef9` |
+| BTC AS naive | `…T200253604854_404a6e` | `…T200309112269_e18ad8` | `…T200324375461_3b7f8d` |
+| BTC AS prob_queue | `…T200339866456_20132a` | `…T200355270865_cb9ccf` | `…T200410228839_4ca164` |
+| BTC Sym naive | `…T200425270687_10878d` | `…T200440499849_25eb32` | `…T200454817940_ecc0e0` |
+| BTC Sym prob_queue | `…T200509058982_3cfaab` | `…T200523212080_6600ae` | `…T200537241183_5af4de` |
+
+**This table is a comparison, not a selection.** Queue model and latency are properties of the
+simulator&#x27;s fidelity and of the venue, not knobs we choose, so it has no in-sample problem and
+it is kept exactly as Phase 1 published it. `configs/sweep.yaml` re-runs the SYN half of it as
+`sweeps/sweep_d15a2ae7` (12 cells, `fraction` split, 60% train / 40% test, 30 s embargo) purely
+to check that the *orderings* survive being measured on two disjoint halves of the session:
+
+| cell (SYN), latency 0 / 1 ms / 10 ms | train bps | test bps | train /day | test /day |
+|---|---|---|---|---|
+| AS naive | 0.186 / 0.186 / 0.166 | 0.134 / 0.127 / 0.114 | 522 / 527 / 493 | 398 / 380 / 360 |
+| AS prob_queue | -0.237 / -0.245 / -0.257 | -0.244 / -0.244 / -0.266 | -354 / -371 / -418 | -417 / -421 / -491 |
+| Sym naive | -0.068 / -0.077 / -0.123 | -0.259 / -0.258 / -0.294 | -679 / -758 / -1153 | -2679 / -2649 / -2860 |
+| Sym prob_queue | -0.601 / -0.605 / -0.676 | -0.934 / -0.947 / -0.989 | -3395 / -3406 / -3733 | -5528 / -5585 / -5700 |
+
+AS beats Symmetric, Naive beats ProbQueue and &quot;latency degrades PnL&quot; all hold on both halves in
+all four series (rank Spearman 0.853 across the 12 cells; the one exception is Symmetric/Naive
+on test, where 1 ms is 30 /day better than 0 ms, well inside the noise). The `winner` field of
+that sweep&#x27;s manifest and the winner&#x27;s-curse line of its report are meaningless here.
+
+## Sensitivity (AS, zero latency, synthetic_dev; OUT OF SAMPLE)
+
+**This replaces the Phase 1 in-sample table.** That table chose and reported the same
+parameters on the same 1374 s session, so it could not separate a real effect from a lucky
+cell. Here the grid is scored on train windows only and every one of the 36 cells is re-run
+on the held-out test window of the same fold; every number below is a **test-window** number.
+
+The two parameter tables in this file answer different questions and must not be read the
+same way:
+
+| table | kind | in-sample risk |
+|---|---|---|
+| &quot;Fixed table&quot; above | **comparison** - queue model and latency are venue / fidelity facts, nothing is chosen | none; no selection happens |
+| this section | **selection** - gamma, k, touch_mode, horizon are knobs we would pick | the whole point; the diagnostics below say how much the ranking is worth |
+
+Setup. `configs/sensitivity.yaml` (Naive) and `configs/sensitivity_pq.yaml` (ProbQueue) on
+`synthetic_dev`; `configs/sensitivity_btc.yaml` on BTCUSDT. Grid `gamma x k x touch_mode`
+(3x3x2) zipped with `(rolling_horizon, horizon_s)` in {(false, T), (true, 30 s)} = 36 cells.
+Split `walk_forward`, 3 folds, `train_frac 0.6`, `embargo_s 30`: 3 x (275 s train, 30 s
+embargo, 153 s test) on SYN, 3 x (645 s / 30 s / 400 s) inside BTC window W4. Objective
+`pnl.per_day`, the length-invariant analogue of the total PnL the old table ranked on
+(`pnl.total` is refused by `hft sweep` because train and test windows differ in length).
+216 runs per sweep.
+
+| sweep | id | reports |
+|---|---|---|
+| SYN, Naive | `sweeps/sensitivity_4ec10a92` | `sweep_report.html`, `bps/sweep_report.html` |
+| SYN, ProbQueue | `sweeps/sensitivity_pq_b296ddb9` | same two |
+| BTC W4, ProbQueue | `sweeps/sensitivity_btc_b5d9f4fe` | `sweep_report.html` |
+| Fixed-table comparison | `sweeps/sweep_d15a2ae7` | `sweep_report.html` |
+
+### One axis at a time, Naive queue (the old table&#x27;s setting)
+
+`/day` is `pnl.per_day`; `/sess` rescales it to the 1374 s session the old table used
+(x 0.0159) so the columns are comparable. `rk` is the cell&#x27;s rank among all 36 on that split.
+Fills, inventory and drawdown are test-window values.
+
+| variant | old (in-sample, whole session) | train /day | test /day | test /sess | rk train -&gt; test | fills/min | mean abs inv | max dd |
+|---|---|---|---|---|---|---|---|---|
+| base (gamma 2e-4, k 1.5, join, T = session) | +10.42 | 487.9 | **455.9** | +7.25 | 6 -&gt; 7 | 188.6 | 0.26 | 0.07 |
+| gamma 5e-5 | +14.83 | 1172.9 | **1207.1** | +19.20 | 3 -&gt; 3 | 530.9 | 0.64 | 0.10 |
+| gamma 1e-3 | +2.34 | 3.1 | **-1.9** | -0.03 | 12 -&gt; 24 | 0.5 | 0.00 | 0.00 |
+| k 0.5 | +0.27 | -1.0 | **14.1** | +0.22 | 15 -&gt; 18 | 15.7 | 0.10 | 0.11 |
+| k 5 | +13.83 | 540.3 | **489.8** | +7.79 | 5 -&gt; 5 | 199.8 | 0.28 | 0.07 |
+| touch_mode behind | -9.61 | 174.0 | **10.3** | +0.16 | 7 -&gt; 19 | 81.5 | 0.72 | 0.36 |
+| rolling horizon 30 s | -0.29 | -34.6 | **463.5** | +7.37 | 17 -&gt; 6 | 668.5 | 3.79 | 1.57 |
+| SymmetricQuoter baseline (not in the grid) | -19.22 | -1198.6 | **-394.9** | -6.28 | - | - | 5.06 | - |
+
+The best five on train are the same five cells as the best five on test, with 1 and 2 swapped:
+`gamma 1e-3, k 1.5, join, rolling 30 s` (train 1265.1 / test 1270.1); `gamma 5e-5, k 5, join`
+(1247.8 / **1334.0**, the test winner); `gamma 5e-5, k 1.5, join` (1172.9 / 1207.1);
+`gamma 1e-3, k 5, join, rolling 30 s` (1146.7 / 1073.6); `gamma 2e-4, k 5, join` (540.3 / 489.8).
+21 of 36 cells have positive test PnL; the range is -2840 to +1334 /day.
+
+### One axis at a time, ProbQueue queue (the pessimistic end of the interval)
+
+| variant | train /day | test /day | test /sess | rk train -&gt; test | fills/min | mean abs inv |
+|---|---|---|---|---|---|---|
+| base | -328.6 | **-440.9** | -7.01 | 19 -&gt; 19 | 104.4 | 0.24 |
+| gamma 5e-5 | -1056.0 | **-1116.8** | -17.76 | 22 -&gt; 23 | 291.7 | 0.77 |
+| gamma 1e-3 | 1.0 | **-3.8** | -0.06 | 1 -&gt; 5 | 0.5 | 0.00 |
+| k 0.5 | -74.4 | **-60.2** | -0.96 | 7 -&gt; 7 | 8.5 | 0.08 |
+| k 5 | -395.7 | **-463.5** | -7.37 | 20 -&gt; 20 | 109.9 | 0.27 |
+| touch_mode behind | -200.7 | **-314.0** | -4.99 | 17 -&gt; 18 | 46.2 | 0.69 |
+| rolling horizon 30 s | -2917.0 | **-3186.0** | -50.67 | 28 -&gt; 33 | 376.7 | 4.44 |
+| SymmetricQuoter baseline | -3920.1 | **-4222.0** | -67.15 | - | - | 5.83 |
+
+**2 of 36 cells have positive test PnL, and both earn it by not trading**: the test winner
+(`gamma 1e-3, k 5, behind`, +9.4 /day = +0.15 per session) fills 0.5 times per minute. Under
+the pessimistic queue model the search does not find a good market maker, it finds the
+do-nothing cell.
+
+### BTC, window W4 only, ProbQueue
+
+`binance_btcusdt_20260918` is 5 gap-free windows (298.6 / 113.8 / 8.6 / 337.9 / **3226.0** s)
+separated by 4 holes totalling 707.6 s. Only W4 is long enough to split, so the sweep&#x27;s window
+list is pinned to W4 and no fold crosses a hole. 10 bps maker **and** taker fees.
+
+| variant | train /day | test /day | rk train -&gt; test | fills/min |
+|---|---|---|---|---|
+| base (gamma 5e-10, k 1.5, join, T = session) | -5057.8 | **-4652.4** | 27 -&gt; 27 | 72.4 |
+| gamma 1.25e-10 | -5246.9 | **-4785.4** | 29 -&gt; 29 | 84.5 |
+| gamma 2.5e-9 | -5012.9 | **-4514.1** | 25 -&gt; 26 | 57.1 |
+| k 0.5 | -4799.7 | **-4461.1** | 23 -&gt; 24 | 66.1 |
+| k 5 | -5212.8 | **-4741.2** | 28 -&gt; 28 | 72.8 |
+| touch_mode behind | -4368.1 | **-4017.1** | 4 -&gt; 12 | 97.2 |
+| rolling horizon 30 s | -5495.5 | **-4835.1** | 31 -&gt; 32 | 83.7 |
+
+All 36 cells land between -3909 and -4835 /day: a +/-10% band around the fee bill. Every cell
+is about -11.5 bps of notional, i.e. the 10 bps maker + 10 bps taker schedule and nothing else.
+
+### Diagnostics (docs/05 requires this block under every published parameter table)
+
+From `sweeps/&lt;id&gt;/sweep_diagnostics.json`, metric `pnl.per_day`, 36 cells, 3 folds.
+
+| diagnostic | SYN Naive | SYN ProbQueue | BTC W4 ProbQueue |
+|---|---|---|---|
+| train-test gap (mean / median) | -121.4 / -69.0 | -198.3 / +8.3 | -432.6 / -371.8 |
+| rank Spearman, all 36 cells | **0.785** | **0.966** | **0.805** |
+| ... restricted to the top 18 on train | 0.596 | 0.889 | 0.164 |
+| ... restricted to the top 10 on train | 0.976 | 0.667 | 0.950 |
+| ... restricted to the top 5 on train | 0.900 | **-0.913** | 0.600 |
+| winner&#x27;s curse (train minus test, &gt; 0 = dropped) | -5.0 (it rose) | +4.8 (dropped) | -408.2 (rose) |
+| selection loss vs the true test winner | 63.9 /day | 13.2 /day | 26.1 /day |
+| train winner is also the test winner | no | no | no |
+| per-fold winner stability (modal share) | 0.67 (2 winners / 3 folds) | 0.67 (2 / 3) | 0.67 (2 / 3) |
+| multiple-testing threshold (36 cells) | 165.9; best 1265.1 **clears** | -605.2; best 1.0 clears | -2759.6; best -4343.4 **fails** |
+| cross-fold noise std of one cell | 271.2 /day | 329.6 /day | 913.4 /day |
+
+The whole-grid Spearman is the number docs/05 asks for, but on this grid it flatters the
+result: the 36 cells span -2840 to +1334 /day, so most of the rank agreement is the trivial
+&quot;cells that bleed on train also bleed on test&quot;. The rows restricted to the top of the train
+ranking are the decision-relevant ones, because in practice one picks among the cells that
+looked good. **On ProbQueue that number is -0.91**: among the five cells one would actually
+choose between, the train ranking is worse than random.
+
+Grid caveat: the tick grid collapses the 36 cells into only **23 distinct outcomes** on all
+three sweeps (e.g. `gamma 5e-5, k 1.5, behind, rolling 30 s` and `gamma 2e-4, k 5, behind,
+rolling 30 s` produce identical metrics: both quote sub-tick spreads that round to the same
+place behind the touch). The multiple-testing threshold assumes independent cells and is
+therefore conservative, and several &quot;different&quot; rows above are the same experiment.
+
+### What the out-of-sample re-run actually says
+
+1. **Under Naive the ordering is real; the winner is not.** Spearman 0.785 over the grid, the
+   same five cells top both splits, and the best cell clears the multiple-testing floor by 7x.
+   But the train winner is not the test winner in any of the three sweeps, the modal winner
+   holds only 2 of 3 folds, and one cell&#x27;s fold-to-fold noise (271 /day) is over half the base
+   cell&#x27;s entire test PnL (456 /day). The table supports &quot;join the touch and keep
+   gamma*sigma^2*tau around a tick per clip&quot; - a region, not a cell. Anything finer is noise.
+2. **Under ProbQueue the sensitivity table is not evidence of anything.** 34 of 36 cells lose
+   money out of sample, the two that do not fill 0.5 times a minute, and the train ranking of
+   the top five is anti-correlated with test (-0.91). The Phase 1 claim that particular gamma
+   and k values are better is a Naive-queue-only claim, and Naive is the optimistic bound.
+3. **On BTC the whole table is noise around the fee bill.** The spread across 36 cells is
+   +/-10% of a -4300 /day fee bill, the best train cell does **not** clear its own noise
+   threshold (-4343 against -2760), and the top-18 Spearman is 0.16. 53 minutes of one session
+   cannot separate these parameters. This is the headline negative result and it is the
+   honest answer: on this data the sensitivity question is unanswerable, not answered.
+4. **Three Phase 1 sensitivity claims do not survive.**
+   - &quot;`behind` mode loses money (-9.61)&quot;: out of sample it is +10.3 /day (+0.16 per session),
+     indistinguishable from zero. It is clearly *worse* than `join` (rank 19 vs 7), but the
+     loss itself was in-sample noise.
+   - &quot;a rolling 30 s horizon drives PnL to ~0 (-0.29)&quot;: out of sample it is 463.5 /day, equal
+     to the base cell (455.9), and it is the largest rank move in the grid (17 on train -&gt; 6
+     on test). See the horizon caveat below before reading it either way.
+   - &quot;k = 5 earns more than k = 1.5 (13.83 vs 10.42)&quot;: the direction survives (489.8 vs 455.9)
+     but the gap is 34 /day against 271 /day of fold noise, so it is no longer a finding.
+   Two claims do survive: gamma 5e-5 beats the base cell (1207 vs 456, rank 3 on both splits),
+   and k = 0.5 barely fills (15.7 fills/min vs 188.6).
+5. **Horizon caveat.** `horizon_s` stays at the base 1400 s while the sweep windows are 275 s
+   and 153 s, so tau runs 1400 -&gt; 1125 s and never decays to zero. The non-rolling arm here is
+   a &quot;constant tau ~ 1250 s&quot; arm, not the finite-horizon decay a full-session run shows. This
+   axis measures the *level* of the skew term, not its decay, which is why the rolling-vs-fixed
+   comparison differs from the Phase 1 one. Re-testing the decay itself needs a dataset long
+   enough to hold several full horizons; `synthetic_dev` is not one.
+6. **`requote_on_touch_change` was not re-run out of sample.** It is an order-management knob
+   rather than a model parameter, and adding it as a fifth axis would double the grid to 72
+   cells and raise the multiple-testing threshold for every other row. Its Phase 1 row (+9.85
+   vs +10.42, 30407 orders vs 16450) remains in-sample only and must not be quoted as an
+   out-of-sample result.
+
+## What held, what did not (against paper.md section 6)
+
+1. **Core claim held, and more strongly than in the paper.** On SYN, AS keeps mean
+   |inventory| at 0.5–0.6 clips against 5.4–5.8 for the symmetric quoter, which spends most
+   of the session pinned at the 10-clip cap (holding periods 11 s vs 1.4 s). The paper trades
+   a little mean PnL for that; here AS also has the *higher* PnL in every SYN cell (+10 vs
+   −19 under Naive, −12 vs −66 under ProbQueue) because the un-skewed quoter accumulates a
+   directional position on a random walk and pays for it in drawdown (22–72 vs 0.4–13). On
+   BTC the inventory effect is there too (2.0 vs 3.4 clips under Naive) but PnL before fees
+   is a wash (−44 vs −38): both lose ~$30–45 on ~$1M traded, and everything else is fees.
+2. **Absolute PnL ~0, as predicted; sign depends on the queue model.** Under Naive the SYN
+   1 s markout vs fill price is +0.17 ticks (a third of the half spread captured), under
+   ProbQueue −0.27: with a real queue we are filled only once the queue ahead is gone, i.e.
+   when the level is about to be swept. Naive is the optimistic end of the interval,
+   ProbQueue the pessimistic one, and the interval contains zero. Adverse selection vs mid is
+   small on SYN (−0.01 to −0.04 ticks) — the generator has no momentum — and huge on BTC
+   (−130 to −800 ticks at 1 s): every fill on this bursty session is a sweep.
+3. **ProbQueue fills fewer orders: held everywhere.** SYN 3685 vs 6839 (AS), 8708 vs 15340
+   (Sym); BTC 6095 vs 13737 and 6339 vs 16881. Whole-lot ProbQueue fills (post-change) cut
+   AS fills further than before but the PnL ordering Naive &gt; ProbQueue held in all SYN cells.
+4. **Latency degrades PnL monotonically: held on SYN, reversed on BTC.** SYN AS 10.42 →
+   10.33 → 8.71, Sym −19.2 → −20.5 → −28.7, taker share 0.5% at 1 ms and 3–4% at 10 ms as
+   predicted. On BTC 1 ms of latency *improves* PnL before fees (−44 → −32 AS naive, −36 →
+   −27 PQ) and the maker share drops to 0.83 / 0.70: on a book that moves 100s of ticks per
+   100 ms, a quote that arrives stale often arrives *marketable* and is filled as taker at
+   the current best, which is better than the price we quoted (markout vs fill price goes
+   from −271 to −131 ticks). With maker fee = taker fee (10 bps) there is no penalty for that.
+   This is a real effect of the price-improvement rule, not a bug, but it only helps because
+   the fee schedule is symmetric and the session was one-directional in bursts.
+5. **AS quotes mostly behind the touch: held. `behind` mode &quot;loses money&quot;: did not hold.**
+   Mean model spread 2.38 ticks vs a 1-tick market, so the bid usually sits 1 tick behind and
+   AS fills less than half as often as the touch-joining baseline; you must be at the touch to
+   be filled by anything other than a sweep, and `behind` is clearly the worse setting
+   (out-of-sample rank 19 of 36 vs 7 for `join`). The in-sample −9.6 PnL did **not** survive:
+   out of sample `behind` is +10.3 /day, i.e. zero. See the out-of-sample section.
+6. **Finite horizon matters for inventory; the PnL half of the claim did not survive.** With
+   T = session end the skew term decays to zero and the spread tightens from ~3.4 to 1.33
+   ticks. A rolling 30 s horizon makes the skew per clip 45× smaller and inventory balloons to
+   ~4 clips (out of sample: 3.79 vs 0.26 for the base cell) — the inventory control is entirely
+   the `gamma sigma^2 (T−t)` product, which must be ~1 tick per clip to act at all. But the
+   in-sample &quot;PnL goes to ~0&quot; did **not** hold: out of sample the rolling cell earns 463.5 /day
+   against the base cell&#x27;s 455.9, and it is the largest rank move in the grid (17 on train → 6
+   on test). The out-of-sample windows are shorter than the horizon, so that section tests the
+   *level* of the skew term rather than its decay; the decay claim is untested, not refuted.
+7. Surprises: (a) k is not monotone as the paper suggests: k = 5 (spread floor 0.4 ticks)
+   earns more than k = 1.5 because it joins the touch more often, k = 0.5 (floor 4 ticks)
+   almost never fills — the intensity model behind k is not what fills orders here. Out of
+   sample only the second half of that survives: k = 0.5 still barely fills (15.7 fills/min vs
+   188.6), but k = 5 beats k = 1.5 by 34 /day against 271 /day of fold-to-fold noise, so the
+   k = 5 &gt; k = 1.5 ordering is no longer a finding.
+   (b) Requoting on every touch change doubles the order count for no PnL gain (9.85 vs
+   10.42) but lowers inventory further — **in-sample only, not re-run out of sample**. (c) BTC ProbQueue costs 4× less in fees than Naive
+   and ends with the same PnL before fees; on a fee-heavy venue the pessimistic queue model
+   is the one that matters.
+
+## Known limitations
+
+- One path per dataset: the paper&#x27;s variance-of-PnL claim across 1000 paths is untested.
+- gamma is chosen per dataset so that `gamma sigma^2 T` is ~1–2 ticks per clip; the paper&#x27;s
+  dimensionless gamma = 0.1 has no direct meaning on a tick grid.
+- The sensitivity table is now out-of-sample (walk-forward, 3 folds), but the folds are
+  short: 275 s train / 153 s test on SYN, 645 s / 400 s on BTC. One cell&#x27;s fold-to-fold
+  noise is 271 /day (SYN Naive) to 913 /day (BTC); that is the resolution of these tables.
+- The 36-cell grid has only 23 distinct outcomes: the tick grid maps different (gamma, k)
+  pairs onto the same quotes, so the effective grid is smaller than the nominal one.
+- `horizon_s` is not rescaled to the sweep window, so the non-rolling arm of the
+  sensitivity grid tests the level of gamma*sigma^2*tau, not the finite-horizon decay.
+- `requote_on_touch_change` was not re-run out of sample; its Phase 1 row is in-sample only.
+- BTC: 4 holes (705 s) during which nothing is quoted; inventory carried across a hole is
+  marked at the post-resync mid, so hole jumps enter PnL as inventory marks.
+
+### Objections raised by `hft review` (the publication gate)
+
+One line per coded objection; `hft review` fails while any is missing. Rejecting an objection is
+allowed — the reason has to be written down here, where a reader of the table sees it.
+
+- `UNVERIFIED avellaneda_stoikov/paper.md` — accepted and open. The 原文 column of the fixed table
+  rests on paper.md:42, which quotes the published table from memory. It is the only unverified
+  number in the repo; no conclusion here rests on it, and the column stays marked until the PDF
+  is checked.
+- `SELECTION_LOSS sweep_d15a2ae7` — rejected. That sweep is a fidelity comparison (AS vs
+  Symmetric, Naive vs ProbQueue, latency), not a parameter selection. Nothing is chosen, so
+  selection loss measures nothing; see the note above its table.
+- `NOISE_FLOOR sweep_d15a2ae7` — rejected, same reason. The multiple-testing floor prices the risk
+  of picking the best of 12 cells; the published claim is the *ordering*, which holds on both
+  halves in all four series (Spearman 0.853), not the level of any cell.
+- `SELECTION_LOSS sensitivity_4ec10a92` — accepted. 63.9 /day against 271 /day of fold-to-fold
+  noise on the same cell. This is why the SYN Naive table is published as a region
+  (gamma·sigma²·tau ≈ a tick per clip) and not as a winning cell.
+- `RANK_TOPK sensitivity_pq_b296ddb9` — accepted; this is the headline. Whole-grid Spearman 0.966
+  falls to −0.91 over the top 5 cells by train metric. Among the cells one would actually choose
+  between, selecting on train is worse than random, so no ProbQueue cell is recommended.
+- `WINNERS_CURSE sensitivity_pq_b296ddb9` — accepted, same finding from the other side: the average
+  cell *improved* out of sample (gap mean −198.3) while the best-on-train cell dropped 4.8.
+- `SELECTION_LOSS sensitivity_pq_b296ddb9` — accepted. 13.2 /day, consistent with the two above.
+  The ProbQueue sensitivity table is published as a negative result.
+- `DEGENERATE sensitivity_pq_b296ddb9` — accepted, and it is the mechanism behind the other three:
+  the winning cell fills 1.33 times (0.52 /minute) against a grid median of 134.7. On a net-PnL
+  objective the winner is abstention, not a strategy.
+- `SELECTION_LOSS sensitivity_btc_b5d9f4fe` — accepted. 26.1 /day against 913 /day of fold noise:
+  below the resolution of this data.
+- `NOISE_FLOOR sensitivity_btc_b5d9f4fe` — accepted, and it is the BTC headline. The best train
+  cell (−4343 /day) does not clear its own noise threshold (−2760). 53 minutes of one session
+  cannot separate these parameters; the sensitivity question is unanswerable on this data, not
+  answered.
+</pre></body></html>

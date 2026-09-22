@@ -1,0 +1,231 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>papers/cont_ofi/results.md</title><style>
+:root{--bg:#f9f9f7;--fg:#0b0b0b;--muted:#52514e;--faint:#898781;--line:#e1e0d9;--card:#fcfcfb;
+--bad:#d03b3b;--good:#1b7f4b;--accent:#1f5fb0;--plot-bg:transparent}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececea;--muted:#a6a59f;--faint:#8c8b85;
+--line:#33333a;--card:#1d1d21;--bad:#ff7b6b;--good:#5cc98d;--accent:#7fb2ff;--plot-bg:#f9f9f7}}
+html{background:var(--bg)}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);max-width:1100px;margin:auto}
+h1{font-size:20px;margin:8px 0}h2{font-size:15px;margin:24px 0 8px;color:var(--muted)}
+table{border-collapse:collapse;font-size:12px;margin-bottom:12px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600}td:first-child,th:first-child{text-align:left}
+.banner{background:var(--bad);color:#fff;padding:10px 14px;font-weight:600;border-radius:4px;margin-bottom:12px}
+.note{color:var(--muted);font-size:12px}
+img{max-width:100%;display:block;margin:8px 0;background:var(--plot-bg);border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px}
+.kpi{font-size:22px;font-weight:600}.kpi small{font-size:11px;color:var(--faint);display:block;font-weight:400}
+</style><style>pre.doc{white-space:pre-wrap;word-wrap:break-word;font:12px/1.55 ui-monospace,Consolas,monospace}</style></head><body><h1>papers/cont_ofi/results.md</h1><pre class=doc># Results — Cont, Kukanov &amp; Stoikov (2014)
+
+Outputs: `runs/signals/cont_ofi_synthetic_dev/` and `runs/signals/cont_ofi_binance_btcusdt_20260918/`
+(`summary.json`, `&lt;signal&gt;_signal_eval.json`, `&lt;signal&gt;_signal_report.html`, `signals.parquet`).
+Reproduce: `python -m papers.cont_ofi.evaluate --config papers/cont_ofi/configs/{base,btc}.yaml`.
+
+**Caveat on the real data.** `binance_btcusdt_20260918` is 78 minutes of one instrument recorded
+today with 4 data holes (705 s); 35,555 top-of-book rows (one per 100 ms diff batch that
+changed the touch). Every BTC number below is a pipeline check, not a conclusion. The BTC
+file is one fast, bursty session (see &quot;Data characteristics&quot; at the bottom), which shapes
+every BTC statistic in this file.
+
+## Fixed table (paper&#x27;s contemporaneous regression, `dmid_ticks ~ OFI` over fixed windows)
+
+| 项 | 原文 | 本平台 synthetic_dev | 本平台 BTCUSDT (78 min) | 延迟 1ms | 延迟 10ms |
+|---|---|---|---|---|---|
+| R² at 1 s | (not reported at 1 s; lowest of all scales) | 0.864 (n=1374) | 0.505 (n=3984) | n/a (signal layer) | n/a |
+| R² at 5 s | — | 0.889 (n=274) | 0.676 (n=796) | n/a | n/a |
+| R² at 10 s | ~0.65 average over 50 stocks | 0.911 (n=137) | 0.677 (n=399) | n/a | n/a |
+| R² at 30 s | rises with window, up to several minutes | 0.910 (n=45) | 0.690 (n=133) | n/a | n/a |
+| beta (ticks / unit size) | &gt; 0 for every stock and half hour | 0.0096–0.0108, &gt; 0 | 45–53, &gt; 0 | n/a | n/a |
+| beta × 2D (should be ~1 in the stylised model) | ~1 (lambda ~ 1 in the log-log fit) | 0.77–0.86 | 347–401 | n/a | n/a |
+
+D = mean top-of-book half depth in size units (39.9 lots on SYN, 3.81 BTC on BTCUSDT).
+Windows following a data hole are excluded from the regression.
+Latency columns do not apply: OFI is an offline signal; there is no simulator run.
+
+### Which windows these numbers use, and what a hole does to them
+
+Checked in Wave B, because a published R² that silently straddles 707 s of missing data is not
+a result. `evaluate.py` loads the whole span in one frame; it does not restrict itself to
+gap-free windows. `binance_btcusdt_20260918` is **5 gap-free windows** (298.6 / 113.8 / 8.6 /
+337.9 / **3226.0** s, 84.9% coverage) separated by **4 holes** totalling 707.6 s, the largest
+568.6 s. `synthetic_dev` is a single gap-free window of 1374.1 s, so nothing below applies to it.
+
+**Contemporaneous regression (the paper&#x27;s claim): not affected.** `bucket_ofi` already drops
+every bucket whose predecessor bucket is missing (`gap == 1` filter), so a hole longer than one
+bucket removes itself. Re-running the whole evaluation restricted to W4 alone — 3226 s, no
+holes, 81% of covered time — confirms it (`runs/signals/cont_ofi_btc_w4/`, reproduce with
+`python -m papers.cont_ofi.evaluate --dataset binance_btcusdt_20260918 --symbols BTCUSDT
+--start 1789743695914000000 --end 1789746921914000001 --out runs/signals/cont_ofi_btc_w4`):
+
+| window | R² full span (published) | R² W4 only | beta full span | beta W4 | beta x 2D W4 |
+|---|---|---|---|---|---|
+| 1 s | 0.505 (n=3984) | 0.515 (n=3226) | 45–53 | 45.97 | 350 |
+| 5 s | 0.676 (n=796) | 0.641 (n=645) | | 49.65 | 378 |
+| 10 s | 0.677 (n=399) | 0.695 (n=322) | | 52.91 | 403 |
+| 30 s | 0.690 (n=133) | 0.719 (n=107) | | 49.66 | 378 |
+
+Differences are ±0.035, smaller than the window-to-window variation, and every conclusion in
+the &quot;What held&quot; section is unchanged. **The published R² numbers stand.**
+
+**Forward-looking signal table: mildly affected, biased the wrong way.** The labels in
+`hft.eval.labels` do cross holes. Event horizons (`shift(-h)`) jump the gap outright; time
+horizons use as-of semantics, so they mostly *under*-measure into a hole rather than jumping it,
+except where the hole is shorter than the horizon. Counting the affected rows on the BTC file:
+
+| horizon | rows whose label crosses a hole | mean abs mid change, within-window | ... crossing a hole |
+|---|---|---|---|
+| e1 | 8 (0.02%) | 44.8 ticks | 4,433 ticks |
+| e10 | 44 (0.12%) | 410 | 7,931 |
+| e50 | 204 (0.57%) | 1,432 | 7,887 |
+| t1s | 37 (0.10%) | — | 310 |
+| t5s | 192 (0.54%) | — | 1,060 |
+| t30s | 948 (2.67%) | — | 3,167 |
+
+At e10 those 44 rows are 0.12% of the sample but carry ~31% of the total squared variation of
+the label. That inflates the denominator of a linear R² without being explainable by OFI, so the
+published forward R² is biased **down**: on the hole-free W4 window `ofi_e10` gives 0.027 /
+0.055 / 0.055 at e1 / e10 / 1 s against the published 0.022 / 0.040 / 0.050, and `imbalance`
+gives 0.056 / 0.110 / 0.106 against 0.047 / 0.086 / 0.106. Spearman IC is rank-based and barely
+moves (`ofi_e10` 0.270 / 0.330 / 0.325 on W4 vs 0.274 / 0.327 / 0.314 published; `imbalance`
+0.365 vs 0.371 at e1). **Conclusion: the forward R² column understates by roughly 15–30%
+relative, the IC column is unaffected, and no ordering or conclusion changes.** The tables
+below are left at the full-span values, with this note as the correction.
+
+Request to the Quant Analyst: `hft.eval.labels.make_labels` has no notion of session windows,
+so any future signal evaluation on a dataset with holes inherits the same bias. A
+`windows=` argument that nulls labels crossing a gap would fix it at the source.
+
+## Forward-looking signal test (platform standard, not a paper claim)
+
+Spearman IC of the trailing-window signal against the forward mid change. Rows with a zero
+mid change are included (they are 91% of rows on BTC, ~70% on SYN), which is why hit rates
+are quoted on non-zero moves only.
+
+### synthetic_dev (43,355 rows, 1374 s)
+
+| signal | e1 | e5 | e10 | e50 | 1 s | 5 s | 30 s |
+|---|---|---|---|---|---|---|---|
+| ofi_e1 | 0.008 | 0.012 | 0.009 | 0.002 | -0.000 | -0.002 | 0.000 |
+| ofi_e5 | 0.018 | 0.021 | 0.015 | 0.001 | 0.004 | -0.008 | -0.004 |
+| ofi_e10 | 0.016 | 0.013 | 0.005 | -0.003 | -0.001 | -0.011 | -0.005 |
+| ofi_e50 | 0.005 | 0.006 | 0.002 | 0.006 | -0.002 | -0.031 | -0.024 |
+| ofi_t1s | 0.007 | 0.006 | 0.000 | -0.003 | -0.011 | -0.027 | -0.018 |
+| ofi_t5s | -0.000 | -0.004 | -0.011 | -0.029 | -0.018 | -0.034 | -0.052 |
+| last_mid_change (baseline) | 0.001 | 0.005 | 0.007 | 0.002 | 0.000 | -0.003 | 0.000 |
+| micro_offset_ticks | 0.056 | 0.050 | 0.036 | 0.027 | 0.024 | 0.020 | 0.000 |
+| imbalance | 0.056 | 0.050 | 0.036 | 0.028 | 0.025 | 0.020 | -0.000 |
+
+R² of every signal is &lt; 0.003 at every horizon (OFI &lt; 0.0004 except the 5 s window at long
+horizons, 0.002). IC t-stats over 10 time buckets: ofi_e5/e10 at e1 ~3.5, imbalance ~12,
+everything else |t| &lt; 2. Hit rate on non-zero moves: OFI 0.51–0.53, imbalance 0.54.
+
+### binance_btcusdt_20260918 (35,555 rows, 4692 s incl. 705 s of holes)
+
+| signal | e1 | e5 | e10 | e50 | 1 s | 5 s | 30 s |
+|---|---|---|---|---|---|---|---|
+| ofi_e1 | 0.271 | 0.239 | 0.205 | 0.088 | 0.211 | 0.099 | 0.034 |
+| ofi_e5 | 0.282 | 0.313 | 0.289 | 0.124 | 0.294 | 0.144 | 0.051 |
+| ofi_e10 | 0.274 | 0.327 | 0.308 | 0.123 | 0.314 | 0.147 | 0.056 |
+| ofi_e50 | 0.144 | 0.177 | 0.155 | -0.003 | 0.158 | 0.002 | 0.011 |
+| ofi_t1s | 0.272 | 0.325 | 0.304 | 0.123 | 0.311 | 0.147 | 0.056 |
+| ofi_t5s | 0.151 | 0.188 | 0.169 | 0.000 | 0.171 | 0.007 | 0.012 |
+| last_mid_change (baseline) | 0.333 | 0.253 | 0.209 | 0.081 | 0.217 | 0.090 | 0.035 |
+| micro_offset_ticks | 0.372 | 0.450 | 0.434 | 0.210 | 0.433 | 0.228 | 0.130 |
+| imbalance | 0.371 | 0.450 | 0.434 | 0.210 | 0.433 | 0.228 | 0.130 |
+
+R² (linear): ofi_e10 0.022 (e1) / 0.040 (e10) / 0.050 (1 s); imbalance 0.047 / 0.086 / 0.106;
+last_mid_change 0.012 / 0.006 / 0.009. IC t-stats over 10 time buckets 20–32 for every
+signal. Hit rate on non-zero moves: OFI 0.82–0.86,
+last_mid_change 0.976, imbalance 0.936. These BTC forward numbers are dominated by same-sign
+runs of batch-level mid moves during sweeps; see &quot;Data characteristics&quot; before reading them
+as predictability.
+
+Spearman correlations between signals (BTC): ofi_e10 vs ofi_t1s 0.96 (a 1 s window is ~10
+batches), ofi_e10 vs imbalance 0.65, ofi_e1 vs last_mid_change 0.49. On SYN: ofi_e1 vs
+last_mid_change 0.68, ofi vs imbalance 0.2–0.3.
+
+## What held, what did not (against paper.md section 6)
+
+1. Contemporaneous linear impact: **held on both datasets.** beta &gt; 0, R² grows with the
+   window as the paper reports (0.50 -&gt; 0.69 on BTC, 0.86 -&gt; 0.91 on SYN; the BTC 10 s value
+   of 0.68 is right at the paper&#x27;s 65% average). The synthetic R²
+   is above the paper&#x27;s 65% average; predicted 20–50%, so the generator is &quot;cleaner&quot; than a
+   real book (every sweep is an OFI event, size refills are pure noise that averages out at
+   1 s). Surprise: on SYN `beta * 2D = 0.77–0.86`, close to the stylised-model value of 1
+   with no tuning; on BTC it is ~390, i.e. the observed impact per unit of top-of-book flow is
+   two orders of magnitude larger than best-level depth would predict. That is what a
+   book sparse in ticks does: the paper&#x27;s `D` is depth per tick, and at $80k with a $0.01
+   tick the next level is often 100s of ticks away, so one unit of flow moves the mid by
+   100s of ticks. Not a contradiction of the paper, but the stylised `1/(2D)` needs depth per
+   tick, which `top_of_book` does not carry (feature request: depth within N ticks).
+2. OFI as a forward predictor on SYN: **~0 as predicted** (|IC| &lt;= 0.02, R² &lt; 0.001). The
+   flow signal carries no information on a memoryless generator. Not predicted: imbalance /
+   microprice have a small but real IC (0.056, t ~ 12) because the generator&#x27;s partial
+   trades deplete a thin best level and can delete it, so queue size does predict the next
+   mid move. `synthetic_dev` is a null control for flow signals, not for state signals.
+3. OFI as a forward predictor on BTC: **positive but not what I predicted.** IC 0.2–0.3 at
+   1–10 rows (predicted 0.02–0.08) and decaying with horizon as predicted. The size comes from
+   same-sign runs of batch-level mid moves during sweeps (the momentum baseline has IC 0.33
+   at 1 row and a 97.6% hit rate), so it is 100 ms batching plus a bursty session, not a
+   tradable edge at the touch. The predicted ordering imbalance ~ microprice &gt; OFI holds
+   (0.37 vs 0.27 at e1, 0.45 vs 0.33 at e5); last-mid-change &gt; OFI at e1 did not.
+4. Last-mid-change on SYN: IC ~0 (predicted slightly negative from bid–ask bounce; there is
+   no bounce in a mid series so ~0 is the right answer, my prediction was wrong).
+5. `beta ~ 1/(2D)` across instruments: not testable with one instrument per dataset.
+
+## Data characteristics of the BTC file (checked before interpreting)
+
+I first read the BTC numbers as a data bug; a lag test says otherwise, so this is recorded to
+save the next reader the detour.
+
+- On the pre-reconversion file the reconstructed book was never crossed and the spread was
+  1 tick in 99% of rows, yet only 42% of trades printed inside the touch (median 4 ticks off,
+  90th pct 808 ticks), and 1,206 single 100 ms batches moved the mid by &gt; 500 ticks ($5),
+  max 18,653 ticks. The reconverted file (holes marked, 14/14 replay checks) gives almost
+  the same signal statistics, so these are properties of the session, not of the converter.
+- 1 s changes of the book mid and of the last trade price have correlation 0.95 at lag 0 and
+  &lt; 0.2 at +-1 s; shifting trade timestamps by -5 s .. +5 s only lowers the within-touch
+  rate. So the depth and trade streams are the same market with consistent clocks.
+- Conclusion: the session was fast and bursty. sigma of the mid is ~850 ticks/sqrt(s), i.e.
+  ~1 bp/sqrt(s), which is ordinary BTC volatility at a $0.01 tick; 91% of 100 ms batches do
+  not move the mid and the rest move it in same-sign runs (sliced market orders sweeping a
+  book that is sparse in ticks at $80k). Trades sit &quot;off the touch&quot; because the touch is the
+  last 100 ms batch, not the state at trade time.
+- Consequences for the numbers above: (i) `beta * 2D ~ 380` instead of ~1 is expected when
+  price levels are ~100s of ticks apart: the paper&#x27;s `D` is depth *per tick*, ours is depth at
+  the (sparse) best level; (ii) the large forward IC and 97.6% hit rate of the momentum
+  baseline come from same-sign runs of batch-level mid moves during sweeps, which is a real
+  feature of 100 ms batched data but not exploitable at the touch (the move has happened
+  inside the batch), so it says nothing about tradable predictability.
+- **Confirmed 2026-09-22** by `python -m hft.data.cli audit binance_btcusdt_20260918`: it is
+  staleness, not a converter fault. Measured against the touch of the *last* depth batch the rate
+  is 42.8%; allowing the touch of the *next* batch as well it is **99.2%**. Trade-to-batch
+  staleness has median 48 ms and p99 99 ms — half a batch and one batch, which is what uniform
+  arrival inside a 100 ms window predicts. The same audit replays the stored parquet and
+  reproduces the converter&#x27;s own 14 snapshots compared / 0 mismatches / 9 resets, and finds 0
+  crossed books and 0 rows inside a hole.
+
+## Known limitations
+
+- One instrument per dataset, so the paper&#x27;s cross-instrument claim `beta ≈ 1/(2D)` is not
+  testable here. The single-instrument value is off by two orders of magnitude on BTC for a known
+  reason (below), which is not the same as confirming or refuting the paper.
+- `beta·2D ≈ 390` on BTC because `top_of_book` carries depth at the best level, while the paper&#x27;s
+  `D` is depth *per tick*. At $80k with a $0.01 tick the next level is often hundreds of ticks
+  away. Testing the stylised constant needs depth within N ticks — a feature that does not exist
+  yet (request to the Data Engineer, recorded above).
+- The forward-looking signal test is a platform standard, not a paper claim. The large BTC IC
+  (0.2–0.3) comes from same-sign runs of mid moves *inside* 100 ms batches; the move has already
+  happened when the batch prints, so it is not tradable at the touch and must not be quoted as
+  predictive power.
+- `synthetic_dev` is a null control for flow signals only. Its imbalance/microprice IC is real
+  (0.056, t ≈ 12) because partial trades deplete a thin best level, so it is not a null control
+  for state signals.
+- The 42% within-touch trade rate is explained by 100 ms depth batching: 99.2% of trades fall
+  inside the bracket of the touch before and after, with median staleness 48 ms (`hft.data.cli
+  audit`, 2026-09-22). This is measured inside our own data; it is still not cross-checked against
+  an unbatched stream, since `@bookTicker` was not recorded. The consequence for signals stands
+  either way — the touch a trade is measured against is up to one batch old.
+- BTC numbers come from one 78-minute session with 705 s of holes. Labels crossing a hole are
+  dropped, so the effective sample is smaller than the row count suggests.
+</pre></body></html>

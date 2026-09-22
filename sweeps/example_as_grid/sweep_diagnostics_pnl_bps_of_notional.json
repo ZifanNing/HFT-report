@@ -1,0 +1,149 @@
+{
+  "metric": "pnl.bps_of_notional",
+  "params": [
+    "gamma",
+    "k"
+  ],
+  "higher_is_better": true,
+  "splits": [
+    "train",
+    "test"
+  ],
+  "n_cells": 12,
+  "n_runs": 96,
+  "failed_runs": {
+    "available": false,
+    "n_runs": 96,
+    "n_failed": 0
+  },
+  "train_test": {
+    "available": true,
+    "n_cells_both": 12,
+    "top_k": 5,
+    "rank_spearman_top_k": 0.8999999999999998,
+    "gap_mean": 0.6067593530605028,
+    "gap_median": 0.4542106920335539,
+    "gap_std": 1.1532774060219273,
+    "gap_max": 3.0927171612990527,
+    "rank_spearman": 0.6223776223776225,
+    "test_mean": -2.658375185525381,
+    "test_std": 7.792245263273172
+  },
+  "winners_curse": {
+    "available": true,
+    "selected_params": {
+      "gamma": 0.05,
+      "k": 1.0
+    },
+    "selected_train": 2.9567144005208252,
+    "selected_test": 3.1785462535860978,
+    "curse": -0.22183185306527253,
+    "mean_gap": 0.6067593530605028,
+    "excess_over_mean_gap": -0.8285912061257753,
+    "best_test_params": {
+      "gamma": 0.05,
+      "k": 1.0
+    },
+    "best_test": 3.1785462535860978,
+    "selection_loss": 0.0,
+    "selected_is_best_test": true
+  },
+  "activity": {
+    "available": true,
+    "column": "fills.n_fills",
+    "grid_median": 1027.125,
+    "grid_min": 920.5,
+    "grid_max": 1104.0,
+    "selected": 1005.5,
+    "selected_vs_median": 0.9789460873798224
+  },
+  "fee_domination": {
+    "available": false,
+    "reason": "needs a bps-of-notional metric and costs.fees_bps_of_notional"
+  },
+  "fold_stability": {
+    "available": true,
+    "n_folds": 4,
+    "per_fold": [
+      {
+        "fold": 0,
+        "params": {
+          "gamma": 0.05,
+          "k": 1.0
+        },
+        "metric": 4.7006664741478765
+      },
+      {
+        "fold": 1,
+        "params": {
+          "gamma": 0.1,
+          "k": 1.0
+        },
+        "metric": 3.1658044419043563
+      },
+      {
+        "fold": 2,
+        "params": {
+          "gamma": 0.1,
+          "k": 1.5
+        },
+        "metric": 4.79161060237768
+      },
+      {
+        "fold": 3,
+        "params": {
+          "gamma": 0.05,
+          "k": 1.0
+        },
+        "metric": 3.801636146649843
+      }
+    ],
+    "mode_params": {
+      "gamma": 0.05,
+      "k": 1.0
+    },
+    "mode_count": 2,
+    "mode_share": 0.5,
+    "n_distinct_winners": 3,
+    "winner_counts": [
+      {
+        "params": {
+          "gamma": 0.05,
+          "k": 1.0
+        },
+        "n": 2
+      },
+      {
+        "params": {
+          "gamma": 0.1,
+          "k": 1.0
+        },
+        "n": 1
+      },
+      {
+        "params": {
+          "gamma": 0.1,
+          "k": 1.5
+        },
+        "n": 1
+      }
+    ]
+  },
+  "multiple_testing": {
+    "available": true,
+    "basis": "train",
+    "n_cells": 12,
+    "metric_mean": -2.051615832464878,
+    "metric_std": 6.920390037716486,
+    "noise_std": 0.6456705687012192,
+    "noise_basis": "across folds",
+    "expected_max_z": 1.6648113879749364,
+    "noise_threshold": -0.9766961168108346,
+    "best_metric": 2.9567144005208252,
+    "exceeds_noise_threshold": true,
+    "note": "threshold = cross-cell mean + E[max of N standard normals] * noise std; with no folds the noise std is the cross-cell spread, which any real effect inflates, so the threshold is a floor, not a test"
+  },
+  "flags": [
+    "winning parameter is unstable: 3 different winners over 4 folds, modal winner wins 50% of them."
+  ]
+}

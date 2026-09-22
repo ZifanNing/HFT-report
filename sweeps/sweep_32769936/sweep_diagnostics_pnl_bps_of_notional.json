@@ -1,0 +1,128 @@
+{
+  "metric": "pnl.bps_of_notional",
+  "params": [
+    "sim.queue_model",
+    "sim.latency.entry_us",
+    "sim.latency.resp_us"
+  ],
+  "higher_is_better": true,
+  "splits": [
+    "train",
+    "test"
+  ],
+  "n_cells": 6,
+  "n_runs": 12,
+  "failed_runs": {
+    "available": true,
+    "n_runs": 12,
+    "n_failed": 0,
+    "n_baseline_runs": 2,
+    "n_baseline_failed": 0,
+    "n_ok": 12
+  },
+  "train_test": {
+    "available": true,
+    "n_cells_both": 6,
+    "top_k": 5,
+    "rank_spearman_top_k": 0.7999999999999999,
+    "gap_mean": 0.02972868440333332,
+    "gap_median": 0.030367241772999973,
+    "gap_std": 0.02717245130436759,
+    "gap_max": 0.058742651861,
+    "rank_spearman": 0.8857142857142858,
+    "test_mean": -0.06318976154266666,
+    "test_std": 0.20636543830971765
+  },
+  "winners_curse": {
+    "available": true,
+    "selected_params": {
+      "sim.queue_model": "naive",
+      "sim.latency.entry_us": 1000,
+      "sim.latency.resp_us": 1000
+    },
+    "selected_train": 0.186007591846,
+    "selected_test": 0.127264939985,
+    "curse": 0.058742651861,
+    "mean_gap": 0.02972868440333332,
+    "excess_over_mean_gap": 0.02901396745766668,
+    "best_test_params": {
+      "sim.queue_model": "naive",
+      "sim.latency.entry_us": 0,
+      "sim.latency.resp_us": 0
+    },
+    "best_test": 0.134037371858,
+    "selection_loss": 0.006772431873000001,
+    "selected_is_best_test": false
+  },
+  "activity": {
+    "available": true,
+    "column": "fills.n_fills",
+    "grid_median": 1336.5,
+    "grid_min": 948.0,
+    "grid_max": 1759.0,
+    "grid_median_per_minute": 154.33428170046855,
+    "selected": 1657.0,
+    "selected_vs_median": 1.2398054620276842,
+    "selected_per_minute": 191.34448543036018
+  },
+  "fee_domination": {
+    "available": true,
+    "basis": "test",
+    "grid_spread": 0.39995300863499994,
+    "fee_bps_median": 0.0,
+    "spread_over_fees": null,
+    "metric_median": -0.06508521238449999
+  },
+  "fold_stability": {
+    "available": true,
+    "n_folds": 1,
+    "per_fold": [
+      {
+        "fold": 0,
+        "params": {
+          "sim.queue_model": "naive",
+          "sim.latency.entry_us": 0,
+          "sim.latency.resp_us": 0
+        },
+        "metric": 0.134037371858
+      }
+    ],
+    "mode_params": {
+      "sim.queue_model": "naive",
+      "sim.latency.entry_us": 0,
+      "sim.latency.resp_us": 0
+    },
+    "mode_count": 1,
+    "mode_share": 1.0,
+    "n_distinct_winners": 1,
+    "winner_counts": [
+      {
+        "params": {
+          "sim.queue_model": "naive",
+          "sim.latency.entry_us": 0,
+          "sim.latency.resp_us": 0
+        },
+        "n": 1
+      }
+    ]
+  },
+  "multiple_testing": {
+    "available": true,
+    "basis": "train",
+    "n_cells": 6,
+    "metric_mean": -0.03346107713933335,
+    "metric_std": 0.2331653042479582,
+    "noise_std": 0.2331653042479582,
+    "noise_basis": "cross-cell dispersion",
+    "expected_max_z": 1.3001407878455837,
+    "noise_threshold": 0.26968664522386226,
+    "best_metric": 0.186007591846,
+    "exceeds_noise_threshold": false,
+    "note": "threshold = cross-cell mean + E[max of N standard normals] * noise std; with no folds the noise std is the cross-cell spread, which any real effect inflates, so the threshold is a floor, not a test"
+  },
+  "flags": [
+    "winner's curse: the best-on-train cell drops 0.0587427 on test, more than the 0.0297287 of the average cell.",
+    "selecting on train costs 0.00677243 versus the best test cell.",
+    "best cell (0.186008) does not clear the noise threshold (0.269687) implied by trying 6 cells."
+  ]
+}

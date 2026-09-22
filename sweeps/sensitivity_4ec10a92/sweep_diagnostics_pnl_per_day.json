@@ -1,0 +1,166 @@
+{
+  "metric": "pnl.per_day",
+  "params": [
+    "params.gamma",
+    "params.k",
+    "params.touch_mode",
+    "params.rolling_horizon",
+    "params.horizon_s"
+  ],
+  "higher_is_better": true,
+  "splits": [
+    "train",
+    "test"
+  ],
+  "n_cells": 36,
+  "n_runs": 216,
+  "failed_runs": {
+    "available": true,
+    "n_runs": 216,
+    "n_failed": 0,
+    "n_baseline_runs": 6,
+    "n_baseline_failed": 0,
+    "n_ok": 216
+  },
+  "train_test": {
+    "available": true,
+    "n_cells_both": 36,
+    "top_k": 5,
+    "rank_spearman_top_k": 0.8999999999999998,
+    "gap_mean": -121.36864955765753,
+    "gap_median": -69.0377182303929,
+    "gap_std": 259.80794817079806,
+    "gap_max": 275.03206027229834,
+    "rank_spearman": 0.7847357450602009,
+    "test_mean": -295.0790098811942,
+    "test_std": 1118.2873047610094
+  },
+  "winners_curse": {
+    "available": true,
+    "selected_params": {
+      "params.gamma": 0.001,
+      "params.k": 1.5,
+      "params.touch_mode": "join",
+      "params.rolling_horizon": true,
+      "params.horizon_s": 30
+    },
+    "selected_train": 1265.1099336982672,
+    "selected_test": 1270.082160702316,
+    "curse": -4.972227004048818,
+    "mean_gap": -121.36864955765752,
+    "excess_over_mean_gap": 116.3964225536087,
+    "best_test_params": {
+      "params.gamma": 5e-05,
+      "params.k": 5.0,
+      "params.touch_mode": "join",
+      "params.rolling_horizon": false,
+      "params.horizon_s": 1400
+    },
+    "best_test": 1334.0129636427466,
+    "selection_loss": 63.93080294043057,
+    "selected_is_best_test": false
+  },
+  "activity": {
+    "available": true,
+    "column": "fills.n_fills",
+    "grid_median": 239.33333333333334,
+    "grid_min": 0.0,
+    "grid_max": 1718.6666666666667,
+    "grid_median_per_minute": 93.75248458039287,
+    "selected": 1447.6666666666667,
+    "selected_vs_median": 6.048746518105849,
+    "selected_per_minute": 567.0850146694237
+  },
+  "fee_domination": {
+    "available": false,
+    "reason": "needs a bps-of-notional metric and costs.fees_bps_of_notional"
+  },
+  "fold_stability": {
+    "available": true,
+    "n_folds": 3,
+    "per_fold": [
+      {
+        "fold": 0,
+        "params": {
+          "params.gamma": 0.001,
+          "params.k": 1.5,
+          "params.touch_mode": "join",
+          "params.rolling_horizon": true,
+          "params.horizon_s": 30
+        },
+        "metric": 1001.1187884537084
+      },
+      {
+        "fold": 1,
+        "params": {
+          "params.gamma": 5e-05,
+          "params.k": 5.0,
+          "params.touch_mode": "join",
+          "params.rolling_horizon": false,
+          "params.horizon_s": 1400
+        },
+        "metric": 1886.8536255991132
+      },
+      {
+        "fold": 2,
+        "params": {
+          "params.gamma": 0.001,
+          "params.k": 1.5,
+          "params.touch_mode": "join",
+          "params.rolling_horizon": true,
+          "params.horizon_s": 30
+        },
+        "metric": 1280.4660119269918
+      }
+    ],
+    "mode_params": {
+      "params.gamma": 0.001,
+      "params.k": 1.5,
+      "params.touch_mode": "join",
+      "params.rolling_horizon": true,
+      "params.horizon_s": 30
+    },
+    "mode_count": 2,
+    "mode_share": 0.6666666666666666,
+    "n_distinct_winners": 2,
+    "winner_counts": [
+      {
+        "params": {
+          "params.gamma": 0.001,
+          "params.k": 1.5,
+          "params.touch_mode": "join",
+          "params.rolling_horizon": true,
+          "params.horizon_s": 30
+        },
+        "n": 2
+      },
+      {
+        "params": {
+          "params.gamma": 5e-05,
+          "params.k": 5.0,
+          "params.touch_mode": "join",
+          "params.rolling_horizon": false,
+          "params.horizon_s": 1400
+        },
+        "n": 1
+      }
+    ]
+  },
+  "multiple_testing": {
+    "available": true,
+    "basis": "train",
+    "n_cells": 36,
+    "metric_mean": -416.4476594388517,
+    "metric_std": 1224.4612503025537,
+    "noise_std": 271.1567877633238,
+    "noise_basis": "across folds",
+    "expected_max_z": 2.147531942453467,
+    "noise_threshold": 165.87020369596155,
+    "best_metric": 1265.1099336982672,
+    "exceeds_noise_threshold": true,
+    "note": "threshold = cross-cell mean + E[max of N standard normals] * noise std; with no folds the noise std is the cross-cell spread, which any real effect inflates, so the threshold is a floor, not a test"
+  },
+  "flags": [
+    "selecting on train costs 63.9308 versus the best test cell."
+  ]
+}

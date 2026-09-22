@@ -1,0 +1,116 @@
+<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>papers/lob_ml_baseline/results.md</title><style>
+:root{--bg:#f9f9f7;--fg:#0b0b0b;--muted:#52514e;--faint:#898781;--line:#e1e0d9;--card:#fcfcfb;
+--bad:#d03b3b;--good:#1b7f4b;--accent:#1f5fb0;--plot-bg:transparent}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--fg:#ececea;--muted:#a6a59f;--faint:#8c8b85;
+--line:#33333a;--card:#1d1d21;--bad:#ff7b6b;--good:#5cc98d;--accent:#7fb2ff;--plot-bg:#f9f9f7}}
+html{background:var(--bg)}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);max-width:1100px;margin:auto}
+h1{font-size:20px;margin:8px 0}h2{font-size:15px;margin:24px 0 8px;color:var(--muted)}
+table{border-collapse:collapse;font-size:12px;margin-bottom:12px;width:100%}
+th,td{border-bottom:1px solid var(--line);padding:4px 8px;text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:600}td:first-child,th:first-child{text-align:left}
+.banner{background:var(--bad);color:#fff;padding:10px 14px;font-weight:600;border-radius:4px;margin-bottom:12px}
+.note{color:var(--muted);font-size:12px}
+img{max-width:100%;display:block;margin:8px 0;background:var(--plot-bg);border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px}
+.kpi{font-size:22px;font-weight:600}.kpi small{font-size:11px;color:var(--faint);display:block;font-weight:400}
+</style><style>pre.doc{white-space:pre-wrap;word-wrap:break-word;font:12px/1.55 ui-monospace,Consolas,monospace}</style></head><body><h1>papers/lob_ml_baseline/results.md</h1><pre class=doc># Results — LOB ML baseline: top-of-book features to mid-price direction
+
+Model layer only (no simulation), so the Naive / ProbQueue / latency columns of the standard table do not apply.
+
+| 项 | 原文 | 本平台 (Naive) | 本平台 (ProbQueue) | 延迟 1ms | 延迟 10ms |
+|---|---|---|---|---|---|
+| up/down hit rate @1 event | 70–80 % (K&amp;Z, NASDAQ) | see tables below | n/a | n/a | n/a |
+
+Command: `python -m papers.lob_ml_baseline.evaluate --config papers/lob_ml_baseline/configs/&lt;base|btc|smoke|smoke_btc&gt;.yaml`
+(`configs/*.yaml` carry dataset, symbol, window, horizons, feature and model params, out dir; any key can be
+overridden on the CLI, e.g. `--dataset &lt;ds&gt; --symbol &lt;sym&gt; --start ISO --out DIR`). This paper has no strategy
+and no simulation, so `hft run` does not apply to it.
+Outputs: `results/&lt;ds&gt;_&lt;sym&gt;_summary.json` (all metrics + coefficients), `results/&lt;ds&gt;_&lt;sym&gt;_ridge_signal_report.html`.
+
+Features (12): spread, top imbalance, depth imbalance, microprice − mid, mid returns over 1/5/10 rows,
+realized vol (50), trade sign, seconds since last row, `ofi_e1`, `ofi_e10` (`hft.features.ofi.OFI`).
+
+Columns: `acc` = 3-class accuracy of balanced logistic regression on test; `major` = accuracy of always
+predicting the train majority class; `mF1` = macro-F1; `hit` = up/down hit rate on test rows where both
+truth and prediction are non-flat; `cover` = share of non-flat rows the model calls non-flat; `flat` = flat
+share of test; `ridge R²` = Ridge R² on test; `IC` = Spearman IC of the Ridge score vs the continuous label
+on test; `IC_t` = t-stat of IC over 10 time buckets. Split 70/30 by time, embargo = max label horizon in rows.
+Features and labels are built per contiguous segment (row gap &gt; 5 s = data hole); nothing bridges a hole.
+
+## synthetic_dev / SYN (43,355 rows, 1 segment; 215 dropped for null features/labels; train 30,197; test 12,742; embargo 201)
+
+| horizon | acc | major | mF1 | hit | cover | flat | ridge R² | IC | IC_t |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 ev | 0.558 | 0.710 | 0.397 | 0.625 | 0.450 | 0.710 | 0.006 | 0.088 | 7.3 |
+| 5 ev | 0.365 | 0.387 | 0.355 | 0.544 | 0.538 | 0.338 | 0.000 | 0.044 | 2.8 |
+| 10 ev | 0.311 | 0.463 | 0.311 | 0.504 | 0.486 | 0.223 | -0.001 | 0.032 | 2.8 |
+| 50 ev | 0.271 | 0.612 | 0.263 | 0.501 | 0.492 | 0.092 | -0.009 | 0.020 | 0.7 |
+| 1 s | 0.244 | 0.566 | 0.246 | 0.455 | 0.438 | 0.112 | -0.005 | -0.003 | 0.1 |
+| 5 s | 0.300 | 0.736 | 0.246 | 0.491 | 0.602 | 0.038 | -0.024 | -0.025 | -0.2 |
+
+Coefficients (up − down) with |c| ≥ 0.1: 1 ev `top_imbalance` +0.40, `micro_minus_mid_ticks` −0.14; 5 ev
+`top_imbalance` +0.18; 10 ev +0.16; 50 ev only `mid_ret_10` +0.11. OFI adds nothing here.
+Direct check: P(next mid up | imbalance ≥ 0.6) = 0.198 vs P(down) = 0.114; symmetric on the other side.
+
+## binance_btcusdt_20260918 / BTCUSDT (full recorded day; 35,555 rows in 5 segments; 484 dropped; train 24,549; test 10,472; embargo 50)
+
+| horizon | acc | major | mF1 | hit | cover | flat | ridge R² | IC | IC_t |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 ev | 0.557 | 0.932 | 0.369 | 0.982 | 0.870 | 0.932 | 0.038 | 0.331 | 15.3 |
+| 5 ev | 0.481 | 0.788 | 0.434 | 0.904 | 0.810 | 0.788 | 0.061 | 0.421 | 17.9 |
+| 10 ev | 0.480 | 0.659 | 0.469 | 0.845 | 0.782 | 0.659 | 0.087 | 0.431 | 17.2 |
+| 50 ev | 0.382 | 0.377 | 0.378 | 0.593 | 0.548 | 0.222 | 0.040 | 0.238 | 7.6 |
+| 1 s | 0.489 | 0.698 | 0.467 | 0.859 | 0.786 | 0.698 | 0.074 | 0.428 | 18.1 |
+| 5 s | 0.423 | 0.354 | 0.416 | 0.619 | 0.563 | 0.278 | 0.040 | 0.253 | 8.1 |
+
+Coefficients (up − down), |c| ≥ 0.1: 1 ev `top_imbalance` +2.93, `ofi_e1` +1.17, `mid_ret_1` −0.14,
+`mid_ret_5` +0.11; 5 ev `top_imbalance` +1.77, `ofi_e1` +0.39, `mid_ret_1` −0.13; 10 ev `top_imbalance` +1.15,
+`ofi_e1` +0.22, `depth_imbalance` +0.14; 50 ev `top_imbalance` +0.24, `depth_imbalance` +0.23;
+5 s `depth_imbalance` +0.30, `top_imbalance` +0.21. Ridge train R² 0.04–0.13 vs test 0.04–0.09: no overfit.
+Before the data fix (misaligned first snapshot, no hole handling) the numbers were within ±0.01 IC and
+±1 pp hit of these, so the earlier conclusions stand.
+
+## binance_btcusdt_smoke / BTCUSDT — smoke tier, not a result (5-minute window)
+
+`configs/smoke_btc.yaml`, ~4 s. **Local only**: it reads recorded data under the gitignored `data/`, so it
+cannot run in CI — `configs/smoke.yaml` is the CI tier and runs on generated `synthetic_dev` instead.
+`binance_btcusdt_smoke` is a **view** of `binance_btcusdt_20260918`: the
+gap-free window `[1789742229414000000, 1789742528014000000)` = 2026-09-18T14:37:09.414Z .. 14:42:08.014Z,
+298.6 s, 100 % coverage, 0 holes. 2,840 rows in 1 segment; 100 dropped; train 1,917; test 773; embargo 50.
+**773 test rows over five minutes of one instrument is a pipeline check, not a measurement** — the numbers
+below exist to show the run still works, and must not be read as a result.
+
+| horizon | acc | major | mF1 | hit | cover | flat | ridge R² | IC | IC_t |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 ev | 0.514 | 0.858 | 0.435 | 0.981 | 0.945 | 0.858 | 0.176 | 0.472 | 11.7 |
+| 5 ev | 0.467 | 0.598 | 0.474 | 0.886 | 0.875 | 0.598 | 0.200 | 0.555 | 8.9 |
+| 10 ev | 0.471 | 0.427 | 0.467 | 0.823 | 0.790 | 0.427 | 0.158 | 0.504 | 8.4 |
+| 50 ev | 0.484 | 0.611 | 0.367 | 0.592 | 0.828 | 0.021 | -0.158 | 0.116 | -0.6 |
+| 1 s | 0.468 | 0.441 | 0.466 | 0.820 | 0.799 | 0.441 | 0.161 | 0.511 | 8.9 |
+| 5 s | 0.488 | 0.607 | 0.381 | 0.592 | 0.840 | 0.038 | -0.149 | 0.127 | -0.5 |
+
+Consistent with the day set in sign and shape (top-imbalance depletion edge at ≤ 10 ev, decaying by
+50 ev / 5 s), but the levels are not comparable: only 104 test rows enter the 1 ev hit rate, and test R² goes
+negative at 50 ev / 5 s (train +0.06) where the day set holds +0.04. That is the small sample, not a
+different finding.
+
+## Caveats
+
+- **Sample.** One instrument, one day, ~10k test rows of which 7–28 % are non-flat depending on horizon.
+  IC_t of 15–18 at ≤ 10 ev is well past noise; 50 ev / 5 s (IC_t ≈ 8) rests on ~2.5k non-flat rows.
+- **One Binance row = one 100 ms diff batch** (median 27 deltas), not one event. &quot;1 event&quot; horizons are
+  ~100 ms; the literature&#x27;s per-message horizons are finer.
+- **Mechanical, not tradeable.** The 1-row hit rate is dominated by queue depletion: when the best level is
+  nearly empty, the next top-of-book change is almost surely that level vanishing. It predicts the sign of
+  the next half-tick move, which is inside the spread. No cost model was applied.
+- Balanced class weights push 3-class accuracy below the majority baseline at short horizons (flat ≥ 70 %);
+  compare macro-F1 and hit rate instead.
+- **Correction.** An earlier revision of this file said `binance_btcusdt_smoke` &quot;is now a subset of the day
+  set and is no longer reported&quot;. That was wrong when written: at the time the smoke dataset had been
+  byte-identically overwritten by the full-day conversion (same paths, same sha256), so it *was* the whole
+  78-minute day, not a subset — the §6 predictions and the notes.md row about the &quot;8-minute smoke set&quot; refer
+  to a still earlier conversion of it. The Data Engineer has since rebuilt it as a genuine view, the 298.6 s
+  gap-free window above, and it is reported again as the smoke tier only.
+</pre></body></html>

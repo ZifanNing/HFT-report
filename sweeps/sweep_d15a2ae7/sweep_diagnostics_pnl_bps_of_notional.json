@@ -1,0 +1,133 @@
+{
+  "metric": "pnl.bps_of_notional",
+  "params": [
+    "strategy",
+    "sim.queue_model",
+    "sim.latency.entry_us",
+    "sim.latency.resp_us"
+  ],
+  "higher_is_better": true,
+  "splits": [
+    "train",
+    "test"
+  ],
+  "n_cells": 12,
+  "n_runs": 24,
+  "failed_runs": {
+    "available": true,
+    "n_runs": 24,
+    "n_failed": 0,
+    "n_baseline_runs": 0,
+    "n_baseline_failed": 0,
+    "n_ok": 24
+  },
+  "train_test": {
+    "available": true,
+    "n_cells_both": 12,
+    "top_k": 5,
+    "rank_spearman_top_k": 0.7999999999999999,
+    "gap_mean": 0.14249094249449168,
+    "gap_median": 0.11456839919049999,
+    "gap_std": 0.13148994229638136,
+    "gap_max": 0.34288240243199997,
+    "rank_spearman": 0.8531468531468532,
+    "test_mean": -0.3383856051314167,
+    "test_std": 0.408046567636338
+  },
+  "winners_curse": {
+    "available": true,
+    "selected_params": {
+      "strategy": "papers.avellaneda_stoikov.strategy:AvellanedaStoikov",
+      "sim.queue_model": "naive",
+      "sim.latency.entry_us": 1000,
+      "sim.latency.resp_us": 1000
+    },
+    "selected_train": 0.186007591846,
+    "selected_test": 0.127264939985,
+    "curse": 0.058742651861,
+    "mean_gap": 0.14249094249449165,
+    "excess_over_mean_gap": -0.08374829063349165,
+    "best_test_params": {
+      "strategy": "papers.avellaneda_stoikov.strategy:AvellanedaStoikov",
+      "sim.queue_model": "naive",
+      "sim.latency.entry_us": 0,
+      "sim.latency.resp_us": 0
+    },
+    "best_test": 0.134037371858,
+    "selection_loss": 0.006772431873000001,
+    "selected_is_best_test": false
+  },
+  "activity": {
+    "available": true,
+    "column": "fills.n_fills",
+    "grid_median": 2478.5,
+    "grid_min": 948.0,
+    "grid_max": 5735.0,
+    "grid_median_per_minute": 286.2083929626721,
+    "selected": 1657.0,
+    "selected_vs_median": 0.6685495259229373,
+    "selected_per_minute": 191.34448543036018
+  },
+  "fee_domination": {
+    "available": true,
+    "basis": "test",
+    "grid_spread": 1.123503340507,
+    "fee_bps_median": 0.0,
+    "spread_over_fees": null,
+    "metric_median": -0.258547082275
+  },
+  "fold_stability": {
+    "available": true,
+    "n_folds": 1,
+    "per_fold": [
+      {
+        "fold": 0,
+        "params": {
+          "strategy": "papers.avellaneda_stoikov.strategy:AvellanedaStoikov",
+          "sim.queue_model": "naive",
+          "sim.latency.entry_us": 0,
+          "sim.latency.resp_us": 0
+        },
+        "metric": 0.134037371858
+      }
+    ],
+    "mode_params": {
+      "strategy": "papers.avellaneda_stoikov.strategy:AvellanedaStoikov",
+      "sim.queue_model": "naive",
+      "sim.latency.entry_us": 0,
+      "sim.latency.resp_us": 0
+    },
+    "mode_count": 1,
+    "mode_share": 1.0,
+    "n_distinct_winners": 1,
+    "winner_counts": [
+      {
+        "params": {
+          "strategy": "papers.avellaneda_stoikov.strategy:AvellanedaStoikov",
+          "sim.queue_model": "naive",
+          "sim.latency.entry_us": 0,
+          "sim.latency.resp_us": 0
+        },
+        "n": 1
+      }
+    ]
+  },
+  "multiple_testing": {
+    "available": true,
+    "basis": "train",
+    "n_cells": 12,
+    "metric_mean": -0.195894662636925,
+    "metric_std": 0.3056322055602435,
+    "noise_std": 0.3056322055602435,
+    "noise_basis": "cross-cell dispersion",
+    "expected_max_z": 1.6648113879749364,
+    "noise_threshold": 0.3129253137116651,
+    "best_metric": 0.186007591846,
+    "exceeds_noise_threshold": false,
+    "note": "threshold = cross-cell mean + E[max of N standard normals] * noise std; with no folds the noise std is the cross-cell spread, which any real effect inflates, so the threshold is a floor, not a test"
+  },
+  "flags": [
+    "selecting on train costs 0.00677243 versus the best test cell.",
+    "best cell (0.186008) does not clear the noise threshold (0.312925) implied by trying 12 cells."
+  ]
+}
