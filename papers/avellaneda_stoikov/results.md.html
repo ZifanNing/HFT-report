@@ -307,6 +307,84 @@ therefore conservative, and several &quot;different&quot; rows above are the sam
    and ends with the same PnL before fees; on a fee-heavy venue the pessimistic queue model
    is the one that matters.
 
+## Robustness of the fixed table (paired block bootstrap, 2026-09-22)
+
+The fixed table and the `sweeps/sweep_d15a2ae7` half-split above report each ordering claim as a
+point number. This asks a different question: **how much of each difference is within-session
+noise?** Rather than re-simulating, it resamples the realised PnL path. The two arms of a
+comparison are paired on a common 1 s grid, so the market both of them saw cancels in the
+difference; what is left is resampled with a circular block bootstrap at block lengths of 5, 15,
+30 and 60 s, 2000 replicates. The widest block is the most conservative and is the one judged.
+Intervals spanning a data hole are dropped. Reproduce with
+
+```
+hft robust papers/avellaneda_stoikov/configs/robust_syn.yaml
+hft robust papers/avellaneda_stoikov/configs/robust_btc.yaml
+```
+
+Both use PnL **before fees**; see the BTC note below for why that is not optional.
+
+### synthetic_dev — the dataset the claims were made on (1373 intervals, 22.9 min, zero fees)
+
+| claim | point /day | 95% CI at block 60 s | sub-periods with the claimed sign | verdict |
+|---|---|---|---|---|
+| AS &gt; Symmetric (naive) | +1833 | [+743, +2925] | 5 / 6 | holds, not everywhere |
+| AS &gt; Symmetric (ProbQueue) | +3416 | [+2363, +4547] | 6 / 6 | **supported** |
+| Naive &gt; ProbQueue (AS) | +1353 | [+860, +1911] | 6 / 6 | **supported** |
+| Naive &gt; ProbQueue (Symmetric) | +2936 | [+2340, +3571] | 6 / 6 | **supported** |
+| latency degrades PnL (AS, naive) | +72.7 | **[−168, +336]** | **2 / 6** | **NOT SUPPORTED** |
+| latency degrades PnL (AS, ProbQueue) | +60.4 | [+16.7, +104] | 4 / 6 | holds, not everywhere |
+| latency degrades PnL (Symmetric, naive) | +596 | [+266, +959] | 6 / 6 | **supported** |
+
+&quot;Naive beats ProbQueue&quot; is the strongest of the three: it clears zero by a wide margin in both
+strategies and in every sub-period. &quot;AS beats Symmetric&quot; holds, with one of six sub-periods
+against it under the naive queue.
+
+**&quot;Latency degrades PnL&quot; is the weak one, and the published table overstated it.** In the headline
+cell (AS, naive, 0 vs 10 ms) the interval is [−168, +336] /day — it contains zero, and the sign is
+as claimed in only 2 of 6 contiguous sub-periods. The point estimate of +72.7 /day that the fixed
+table reports is inside the noise of this session. The claim survives for the Symmetric quoter and
+partially under ProbQueue, so it is not wrong in general; it is not established for the strategy
+the paper is about, on this data.
+
+### binance_btcusdt_20260918 — every claim points the other way (3979 intervals, 66.3 min)
+
+| claim | point /day | 95% CI at block 60 s | sub-periods | verdict |
+|---|---|---|---|---|
+| AS &gt; Symmetric (naive) | −126 | [−169, −87] | 0 / 6 | **REFUTED** |
+| AS &gt; Symmetric (ProbQueue) | −12.0 | [−31.5, +5.8] | 1 / 6 | not supported |
+| Naive &gt; ProbQueue (AS) | −174 | [−229, −124] | 0 / 6 | **REFUTED** |
+| Naive &gt; ProbQueue (Symmetric) | −60.3 | [−117, −2.2] | 1 / 6 | **REFUTED** |
+| latency degrades PnL (AS, naive) | −272 | [−310, −236] | 0 / 6 | **REFUTED** |
+| latency degrades PnL (AS, ProbQueue) | −214 | [−248, −184] | 0 / 6 | **REFUTED** |
+| latency degrades PnL (Symmetric, naive) | −215 | [−248, −183] | 0 / 6 | **REFUTED** |
+
+These are PnL **before fees**. Measured on net PnL the reversal is far larger and entirely
+uninformative: fees are 96% of the loss on this file (AS/naive nets −1153.79 with a fee bill of
+1109.87), so on net PnL the arm that trades less always wins — ProbQueue fills 6,095 times against
+Naive&#x27;s 13,737 and &quot;beats&quot; it by 18,038 /day while losing on PnL before fees. That number is a fee
+bill, not a finding. The first run of this analysis reported it as one; it is recorded here because
+the mistake is the one `docs/05` already warns about and it was still easy to make.
+
+Before fees the reversal is smaller but consistent: nothing supports the SYN orderings here, and
+five of seven are significantly the other way.
+
+**A reading, not a demonstration.** The faster and the more optimistic arms both fill more (0 ms
+takes 13,737 fills against 13,298 at 10 ms; Naive takes 13,737 against ProbQueue&#x27;s 6,095), and BTC
+AS markout at 1 s is −182 ticks under Naive and −680 under ProbQueue, so the marginal fills a
+faster or more optimistic arm wins on this session are adverse. That story fits the sign, but this
+analysis does not establish it: PnL here includes mark-to-market on inventory, and two arms holding
+different inventory through a trending session can produce the same sign with no difference in fill
+quality. Testing it needs a fill-level decomposition, which is not done.
+
+### What this interval does and does not cover
+
+The bootstrap resamples **within one session**. It answers &quot;how much of this difference is noise
+inside this session&quot; and nothing else. It cannot estimate session-to-session variation, because
+there is one session: a tight interval here is compatible with the sign flipping on another day.
+Every BTC number above should be read as &quot;on 2026-09-18&quot;, and the SYN numbers as &quot;on this
+generator with this seed&quot;. That limit is not a property of the method; it is the sample.
+
 ## Known limitations
 
 - One path per dataset: the paper&#x27;s variance-of-PnL claim across 1000 paths is untested.
@@ -322,6 +400,17 @@ therefore conservative, and several &quot;different&quot; rows above are the sam
 - `requote_on_touch_change` was not re-run out of sample; its Phase 1 row is in-sample only.
 - BTC: 4 holes (705 s) during which nothing is quoted; inventory carried across a hole is
   marked at the post-resync mid, so hole jumps enter PnL as inventory marks.
+
+- The robustness intervals are within-session only. With one recorded session there is no way to
+  estimate how much a difference would move on another day, so a tight interval is not evidence of
+  generalisation. See the robustness section.
+- The circular block bootstrap wraps the series end to start, and on BTC the series is five
+  gap-free windows concatenated, so a few blocks pair increments that are minutes apart in reality
+  (at block 60 s, about 4 of 67 blocks straddle a window boundary). This widens nothing and is
+  small, but the intervals are not exactly those of a single contiguous series.
+- The BTC reversal of &quot;latency degrades PnL&quot; is reported as a measurement, not explained. The
+  adverse-selection reading is consistent with the recorded markout but is not demonstrated;
+  inventory mark-to-market is not separated from fill quality.
 
 ### Objections raised by `hft review` (the publication gate)
 
@@ -357,4 +446,11 @@ allowed — the reason has to be written down here, where a reader of the table 
   cell (−4343 /day) does not clear its own noise threshold (−2760). 53 minutes of one session
   cannot separate these parameters; the sensitivity question is unanswerable on this data, not
   answered.
+- `ROBUST_LATENCY_SYN avellaneda_stoikov` — accepted and acted on. The fixed table&#x27;s latency
+  column is a point estimate; the paired bootstrap puts the AS/naive 0-vs-10 ms difference at
+  [−168, +336] /day with the sign in 2 of 6 sub-periods, so &quot;latency degrades PnL&quot; is not
+  established for AS on synthetic_dev and the table now says so.
+- `ROBUST_REVERSAL_BTC avellaneda_stoikov` — accepted. Before fees, all three orderings are
+  refuted or unsupported on the recorded session. The published fixed table keeps its BTC columns
+  because they are a pipeline check, and this section is the statement of what they are not.
 </pre></body></html>
